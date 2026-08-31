@@ -22,9 +22,9 @@ const WM_CONFIG = {
   SERVICE_NAME: 'ElectronicsMexico-Dashboard',
 
   // ------- Google Sheet -------
-  // ⬇⬇ PEGA AQUÍ EL ID DE TU SHEET ⬇⬇
-  // De la URL: docs.google.com/spreadsheets/d/[ESTE_ES_EL_ID]/edit
-  SHEET_ID: 'PON_AQUI_EL_ID_DE_TU_SHEET',
+  // WALMART DASHBOARD
+  // https://docs.google.com/spreadsheets/d/122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q/edit
+  SHEET_ID: '122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q',
 
   SHEET_MASTER:  'Inventario',      // catálogo + WFS (se reescribe completo)
   SHEET_REGULAR: 'Inv_Normal',      // inventario no-WFS (se llena por partes)

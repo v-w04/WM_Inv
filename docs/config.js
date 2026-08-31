@@ -1,10 +1,12 @@
 /**
  * Configuración del frontend
  * ---------------------------------------------------------
- * PEGA AQUÍ la URL de tu Apps Script Web App después de hacer Deploy.
- * Ejemplo: https://script.google.com/macros/s/AKfycbxABC123.../exec
+ * URL del Apps Script Web App (deployment de WM_Inv Dashboard).
  *
- * Esta URL es "pública" (aparece en el código de GitHub), pero sin la
- * contraseña que configuraste en Apps Script no puede regresar datos.
+ * Esta URL es pública — aparece en el código del repo — pero sin la
+ * contraseña configurada en Apps Script no devuelve ningún dato.
+ *
+ * Si vuelves a hacer un deployment NUEVO (no una versión nueva del
+ * mismo), la URL cambia y hay que actualizarla aquí.
  */
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/PON_AQUI_TU_ID_DE_DEPLOYMENT/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzCA1XumWbAlQRQGBF0ycLiCOKMus3QajkDa30-UrPGx4TN96LwC6NAB1zsd12WROzKsA/exec';
