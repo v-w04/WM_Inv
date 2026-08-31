@@ -1,29 +1,45 @@
-# Apps Script clasp config (contiene scriptId — no es secreto pero mejor no publicarlo)
-apps-script/.clasp.json
-.clasp.json
+# ============================================================
+#  WM_Inv — .gitignore
+# ============================================================
 
-# Node / clasp
+# ── Backend de Apps Script ──────────────────────────────────
+# Los .gs viven local para que los copies/pegues al editor de
+# Apps Script, pero NO se suben a GitHub.
+#
+# Nota: estos archivos NO contienen credenciales (las llaves viven
+# cifradas en PropertiesService). Si algún día quieres versionarlos
+# como respaldo, borra o comenta la línea de abajo.
+apps-script/
+
+# ── Config de clasp (contiene scriptId) ─────────────────────
+.clasp.json
+apps-script/.clasp.json
+
+# ── Node / clasp ────────────────────────────────────────────
 node_modules/
 npm-debug.log
 yarn-error.log
 
-# OS
+# ── Sistema operativo ───────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# Editores
+# ── Editores ────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Backups locales
+# ── Backups y temporales ────────────────────────────────────
 *.bak
 *.tmp
 *~
+*.old
 
-# Env / credenciales (nunca deben existir aquí, pero por si acaso)
+# ── Credenciales (nunca deben existir aquí, pero por si acaso) ──
 .env
 .env.local
 *.credentials.json
+*secret*
+*credentials*
