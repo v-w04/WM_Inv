@@ -1,8 +1,15 @@
 /**
  * ============================================================
- *  WM_Inv — Walmart WFS Dashboard · Config
+ *  WM_Inv — Walmart Dashboard · Config
  *  Backend: Apps Script | Frontend: GitHub Pages
  * ============================================================
+ *
+ *  Calibrado con el diagnóstico del 31/08/2026 sobre la cuenta real:
+ *    · /v3/wfs/inventory        → 401 (Program Eligibility no habilitado)
+ *    · /v3/fulfillment/inventory → ✅ 200, 471 SKUs en WFS
+ *    · /v3/inventories          → 400 MARKET_NOT_SUPPORTED (US only)
+ *    · /v3/items                → ✅ 200, 3,271 items
+ *    · /v3/inventory?sku=X      → ✅ 200 (uno por uno)
  */
 
 const WM_CONFIG = {
@@ -14,36 +21,47 @@ const WM_CONFIG = {
   API_VERSION:  '3.1',
   SERVICE_NAME: 'ElectronicsMexico-Dashboard',
 
-  // ------- Google Sheet de respaldo -------
+  // ------- Google Sheet -------
   // ⬇⬇ PEGA AQUÍ EL ID DE TU SHEET ⬇⬇
   // De la URL: docs.google.com/spreadsheets/d/[ESTE_ES_EL_ID]/edit
   SHEET_ID: 'PON_AQUI_EL_ID_DE_TU_SHEET',
 
-  SHEET_INVENTORY: 'Inventory_Cache',
-  SHEET_LOG:       'Sync_Log',
+  SHEET_MASTER:  'Inventario',      // catálogo + WFS (se reescribe completo)
+  SHEET_REGULAR: 'Inv_Normal',      // inventario no-WFS (se llena por partes)
+  SHEET_LOG:     'Sync_Log',
 
   // ------- PropertiesService keys -------
   PROP_CLIENT_ID:     'WM_CLIENT_ID',
   PROP_CLIENT_SECRET: 'WM_CLIENT_SECRET',
   PROP_DASH_PASSWORD: 'DASH_PASSWORD_HASH',
+  PROP_INV_CURSOR:    'INV_CURSOR',        // posición del barrido de inv. normal
+  PROP_WFS_ENDPOINT:  'WFS_ENDPOINT_MODE', // 'new' | 'legacy' — se autodetecta
 
   // ------- CacheService keys -------
   CACHE_TOKEN:         'wm_access_token',
-  CACHE_INVENTORY:     'wm_inv_v1',
+  CACHE_INVENTORY:     'wm_inv_v2',
   CACHE_SESSION_PREF:  'sess_',
-  CACHE_TTL_SECONDS:   21600,   // 6 horas (máximo que permite CacheService)
-  SESSION_TTL_SECONDS: 43200,   // sesión web = 12 horas
+  CACHE_TTL_SECONDS:   21600,   // 6 h (máximo de CacheService)
+  SESSION_TTL_SECONDS: 43200,   // sesión web = 12 h
 
-  // ------- Auto-refresh servidor -------
-  REFRESH_INTERVAL_MIN: 10,
+  // ------- Triggers -------
+  REFRESH_INTERVAL_MIN: 10,   // catálogo + WFS
+  CHUNK_INTERVAL_MIN:   5,    // barrido de inventario normal
 
-  // ------- Comportamiento del sync -------
-  FETCH_CATALOG_ITEMS: true,
-  FETCH_ORDERS_DAYS:   0,
-  PAGE_PACING_MS:      250,
+  // ------- Presupuestos de tiempo (Apps Script mata a los 6 min = 360s) -------
+  BUDGET_MAIN_MS:  270000,   // 4.5 min para catálogo + WFS
+  BUDGET_CHUNK_MS: 240000,   // 4 min para el barrido por SKU
 
-  // Si el dataset excede esto, no se intenta cachear (se sirve desde Sheet).
-  MAX_CACHE_BYTES: 900 * 1024,   // ~900KB en 10 chunks de 90KB
+  // ------- Pacing (rate limit: 300 TPM) -------
+  PAGE_PACING_MS: 220,   // entre páginas de catálogo/WFS
+  SKU_PACING_MS:  180,   // entre llamadas por SKU
+
+  // ------- Reintentos -------
+  MAX_RETRIES:      3,
+  RETRY_BASE_MS:    800,   // backoff exponencial: 800ms, 1.6s, 3.2s
+
+  // Si el dataset excede esto no se cachea; se sirve desde el Sheet.
+  MAX_CACHE_BYTES: 900 * 1024,
 };
 
 function getBaseUrl() {
@@ -51,12 +69,20 @@ function getBaseUrl() {
 }
 
 /**
- * Abre el spreadsheet por ID (NUNCA getActiveSpreadsheet — truena en triggers
- * y en web apps standalone).
+ * Abre el spreadsheet por ID.
+ * NUNCA getActiveSpreadsheet() — regresa null en triggers y web apps standalone.
  */
 function getSpreadsheet_() {
   if (!WM_CONFIG.SHEET_ID || WM_CONFIG.SHEET_ID.indexOf('PON_AQUI') >= 0) {
     throw new Error('Falta configurar SHEET_ID en Config.gs');
   }
   return SpreadsheetApp.openById(WM_CONFIG.SHEET_ID);
+}
+
+/** Obtiene (o crea) una pestaña por nombre */
+function getSheet_(name) {
+  const ss = getSpreadsheet_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  return sh;
 }

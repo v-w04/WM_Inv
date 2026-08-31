@@ -1,7 +1,10 @@
 /**
  * ============================================================
- *  Api — Cliente HTTP de Walmart Global Marketplace API
+ *  Api — Cliente HTTP de Walmart Marketplace API (MX)
  * ============================================================
+ *
+ *  Incluye reintentos con backoff exponencial en 429/5xx,
+ *  y autodetección del endpoint de WFS (nuevo vs legacy).
  */
 
 function wmHeaders_() {
@@ -16,23 +19,6 @@ function wmHeaders_() {
   };
 }
 
-function wmGet_(path, params) {
-  const url = getBaseUrl() + path + toQs_(params);
-  const opts = { method: 'get', headers: wmHeaders_(), muteHttpExceptions: true };
-  let resp = UrlFetchApp.fetch(url, opts);
-  if (resp.getResponseCode() === 401) {
-    CacheService.getScriptCache().remove(WM_CONFIG.CACHE_TOKEN);
-    opts.headers = wmHeaders_();
-    resp = UrlFetchApp.fetch(url, opts);
-  }
-  const code = resp.getResponseCode();
-  const body = resp.getContentText();
-  if (code < 200 || code >= 300) {
-    throw new Error('GET ' + path + ' → HTTP ' + code + ': ' + body.substring(0, 500));
-  }
-  return JSON.parse(body || '{}');
-}
-
 function toQs_(params) {
   if (!params) return '';
   const parts = [];
@@ -45,56 +31,312 @@ function toQs_(params) {
   return parts.length ? '?' + parts.join('&') : '';
 }
 
-/* ---- WFS Inventory (bulk) ---- */
+/**
+ * GET con reintentos.
+ * - 401 → refresca token y reintenta (una vez)
+ * - 429 / 5xx → backoff exponencial
+ * - Otros 4xx → falla de inmediato (no tiene caso reintentar)
+ */
+function wmGet_(path, params, opts) {
+  opts = opts || {};
+  const url = getBaseUrl() + path + toQs_(params);
+  let lastErr = null;
+
+  for (let attempt = 0; attempt <= WM_CONFIG.MAX_RETRIES; attempt++) {
+    let resp;
+    try {
+      resp = UrlFetchApp.fetch(url, {
+        method: 'get',
+        headers: wmHeaders_(),
+        muteHttpExceptions: true,
+      });
+    } catch (e) {
+      lastErr = 'NETWORK: ' + e.message;
+      Utilities.sleep(WM_CONFIG.RETRY_BASE_MS * Math.pow(2, attempt));
+      continue;
+    }
+
+    const code = resp.getResponseCode();
+    const body = resp.getContentText();
+
+    if (code >= 200 && code < 300) {
+      try { return JSON.parse(body || '{}'); }
+      catch (e) { throw new Error('JSON inválido de ' + path + ': ' + body.substring(0, 200)); }
+    }
+
+    // Token vencido a media corrida
+    if (code === 401 && attempt === 0 && !opts.noTokenRetry) {
+      CacheService.getScriptCache().remove(WM_CONFIG.CACHE_TOKEN);
+      lastErr = 'HTTP 401: ' + body.substring(0, 200);
+      continue;
+    }
+
+    // Throttling o error del servidor → backoff
+    if (code === 429 || code >= 500) {
+      lastErr = 'HTTP ' + code + ': ' + body.substring(0, 200);
+      Utilities.sleep(WM_CONFIG.RETRY_BASE_MS * Math.pow(2, attempt));
+      continue;
+    }
+
+    // 4xx definitivo
+    const err = new Error('GET ' + path + ' → HTTP ' + code + ': ' + body.substring(0, 400));
+    err.httpCode = code;
+    err.body = body;
+    throw err;
+  }
+
+  const err = new Error('GET ' + path + ' agotó reintentos. Último: ' + lastErr);
+  err.exhausted = true;
+  throw err;
+}
+
+/* ==============================================================
+   WFS INVENTORY — autodetecta endpoint nuevo vs legacy
+   ============================================================== */
+
+/**
+ * Decide qué endpoint de WFS usar. Se guarda en PropertiesService
+ * para no re-probar el que falla en cada corrida.
+ *
+ * Si algún día Walmart te habilita "Program Eligibility", corre
+ * resetWfsEndpointMode() y el código migra solo al endpoint nuevo
+ * (que trae forecast, aging y sell-through).
+ */
+function detectWfsEndpoint_() {
+  const props = PropertiesService.getScriptProperties();
+  const cached = props.getProperty(WM_CONFIG.PROP_WFS_ENDPOINT);
+  if (cached) return cached;
+
+  // Probar el nuevo primero (trae muchos más campos)
+  try {
+    wmGet_('/v3/wfs/inventory', { limit: 1, offset: 0 });
+    props.setProperty(WM_CONFIG.PROP_WFS_ENDPOINT, 'new');
+    Logger.log('  ✨ WFS endpoint NUEVO disponible — usando /v3/wfs/inventory');
+    return 'new';
+  } catch (e) {
+    Logger.log('  ℹ WFS nuevo no disponible (' + (e.httpCode || '?') + '), usando legacy');
+    props.setProperty(WM_CONFIG.PROP_WFS_ENDPOINT, 'legacy');
+    return 'legacy';
+  }
+}
+
+/** Borra la detección para que se vuelva a probar el endpoint nuevo */
+function resetWfsEndpointMode() {
+  PropertiesService.getScriptProperties().deleteProperty(WM_CONFIG.PROP_WFS_ENDPOINT);
+  Logger.log('✅ Modo WFS reseteado. La próxima corrida vuelve a probar /v3/wfs/inventory');
+}
+
+/**
+ * Trae TODO el inventario WFS, normalizado a una forma común
+ * sin importar si vino del endpoint nuevo o del legacy.
+ *
+ * Forma de salida por SKU:
+ *   { sku, offerId, wfsAvailToSell, wfsOnHand, wfsReserved, wfsInbound,
+ *     wfsShipNodeType, wfsModifiedDate, wfsFirstInStock,
+ *     wfsAge0_90, ... , wfsDaysOfSupply, ... }
+ */
 function getAllWfsInventory() {
-  const all = [];
+  const mode = detectWfsEndpoint_();
+  return (mode === 'new') ? fetchWfsNew_() : fetchWfsLegacy_();
+}
+
+/* ---- Legacy: /v3/fulfillment/inventory (el que SÍ funciona hoy) ---- */
+function fetchWfsLegacy_() {
+  const out = [];
   let offset = 0, total = null, pages = 0;
-  const limit = 200, maxPages = 500;
+  const limit = 200, maxPages = 200;
+
   while (pages++ < maxPages) {
-    const data = wmGet_('/v3/wfs/inventory', { offset, limit });
+    const data = wmGet_('/v3/fulfillment/inventory', { offset: offset, limit: limit });
     const items = (data && data.payload && data.payload.inventory) || [];
-    all.push.apply(all, items);
-    if (total === null) total = Number((data && data.headers && data.headers.totalCount) || items.length) || items.length;
+    if (total === null) {
+      total = Number((data && data.headers && data.headers.totalCount) || items.length) || items.length;
+    }
+
+    items.forEach(function(it){
+      // shipNodes es un array; para WFS normalmente trae un solo nodo.
+      // Si trae varios, sumamos las cantidades.
+      const nodes = it.shipNodes || [];
+      let avail = 0, onhand = 0;
+      let nodeType = '', modified = '', firstStock = '';
+      nodes.forEach(function(n){
+        avail  += Number(n.availToSellQty || 0);
+        onhand += Number(n.onHandQty || 0);
+        if (!nodeType   && n.shipNodeType)     nodeType   = n.shipNodeType;
+        if (!modified   && n.modifiedDate)     modified   = n.modifiedDate;
+        if (!firstStock && n.firstInStockDate) firstStock = n.firstInStockDate;
+      });
+
+      out.push({
+        sku:              it.sku || '',
+        offerId:          it.offerId || '',
+        wfsAvailToSell:   avail,
+        wfsOnHand:        onhand,
+        wfsReserved:      Math.max(0, onhand - avail),  // derivado
+        wfsInbound:       '',   // el legacy no lo trae
+        wfsShipNodeType:  nodeType,
+        wfsNodeCount:     nodes.length,
+        wfsModifiedDate:  modified,
+        wfsFirstInStock:  firstStock,
+        // Campos del endpoint nuevo — vacíos en legacy
+        wfsStockStatus:   avail > 0 ? 'In Stock' : 'Out of Stock',
+        wfsAge0_90: '', wfsAge91_180: '', wfsAge181_270: '',
+        wfsAge271_365: '', wfsAgeOver365: '',
+        wfsForecastW1_4: '', wfsForecastW5_8: '', wfsForecastW9_12: '',
+        wfsSellThrough: '', wfsDaysOfSupply: '', wfsOutOfStockDate: '',
+        wfsSuggestedUnits: '', wfsSurplusUnits: '',
+      });
+    });
+
     offset += items.length;
     if (!items.length || offset >= total) break;
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
-  return all;
+
+  Logger.log('  WFS (legacy): ' + out.length + ' SKUs');
+  return out;
 }
 
-/* ---- Items (catalog) ---- */
-function getAllItems() {
-  const all = [];
+/* ---- Nuevo: /v3/wfs/inventory (si algún día se habilita) ---- */
+function fetchWfsNew_() {
+  const out = [];
+  let offset = 0, total = null, pages = 0;
+  const limit = 200, maxPages = 200;
+
+  while (pages++ < maxPages) {
+    const data = wmGet_('/v3/wfs/inventory', { offset: offset, limit: limit });
+    const items = (data && data.payload && data.payload.inventory) || [];
+    if (total === null) {
+      total = Number((data && data.headers && data.headers.totalCount) || items.length) || items.length;
+    }
+
+    items.forEach(function(entry){
+      const info = entry.itemInformation   || {};
+      const d    = entry.inventoryData     || {};
+      const ins  = entry.inventoryInsights || {};
+      const age  = d.inventoryAge          || {};
+      const unav = d.unavailableUnits      || {};
+
+      out.push({
+        sku:             info.sku || '',
+        offerId:         info.offerID || '',
+        wfsAvailToSell:  num_(d.availableUnits),
+        wfsOnHand:       num_(d.onhandUnits),
+        wfsReserved:     num_(d.reservedUnits),
+        wfsInbound:      num_(d.inboundUnits),
+        wfsShipNodeType: 'WFSFulfilled',
+        wfsNodeCount:    1,
+        wfsModifiedDate: '',
+        wfsFirstInStock: d.firstInStockDate || '',
+        wfsStockStatus:  d.stockStatus || '',
+        wfsAge0_90:      num_(age.units0to90Days),
+        wfsAge91_180:    num_(age.units91to180Days),
+        wfsAge181_270:   num_(age.units181to270Days),
+        wfsAge271_365:   num_(age.units271to365Days),
+        wfsAgeOver365:   num_(age.unitsOver365Days),
+        wfsForecastW1_4:  num_(ins.salesForecastWeek1to4),
+        wfsForecastW5_8:  num_(ins.salesForecastWeek5to8),
+        wfsForecastW9_12: num_(ins.salesForecastWeek9to12),
+        wfsSellThrough:   num_(ins.sellThroughRate),
+        wfsDaysOfSupply:  num_(ins.daysOfSupply),
+        wfsOutOfStockDate: ins.outOfStockDate || '',
+        wfsSuggestedUnits: num_(ins.suggestedUnits),
+        wfsSurplusUnits:   num_(ins.surplusUnits),
+        wfsReviewUnits:    num_(unav.inventoryReviewUnits),
+        wfsMovementUnits:  num_(unav.inventoryMovementUnits),
+      });
+    });
+
+    offset += items.length;
+    if (!items.length || offset >= total) break;
+    Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
+  }
+
+  Logger.log('  WFS (nuevo): ' + out.length + ' SKUs');
+  return out;
+}
+
+/* ==============================================================
+   CATÁLOGO — /v3/items  (3,271 items ≈ 66 páginas ≈ 85 seg)
+   ============================================================== */
+function getAllItems(deadlineMs) {
+  const out = [];
   let nextCursor = null, pages = 0;
   const maxPages = 400;
+
   while (pages++ < maxPages) {
-    const params = { limit: 50, includeDetails: 'true' };
+    if (deadlineMs && Date.now() > deadlineMs) {
+      Logger.log('  ⏱ Catálogo cortado por tiempo en página ' + pages);
+      break;
+    }
+    const params = { limit: 50 };
     if (nextCursor) params.nextCursor = nextCursor;
+
     const data = wmGet_('/v3/items', params);
     const items = data.ItemResponse || data.items || [];
-    all.push.apply(all, items);
+    items.forEach(function(it){ out.push(normalizeItem_(it)); });
+
     nextCursor = data.nextCursor;
     if (!nextCursor || !items.length) break;
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
-  return all;
+
+  Logger.log('  Catálogo: ' + out.length + ' items');
+  return out;
 }
 
-/* ---- Orders (últimos N días) ---- */
-function getRecentOrders(daysBack) {
-  const startISO = new Date(Date.now() - (daysBack || 7) * 86400000).toISOString();
-  const all = [];
-  let cursor = null, pages = 0;
-  const maxPages = 100;
-  while (pages++ < maxPages) {
-    const params = { createdStartDate: startISO, limit: 100 };
-    if (cursor) params.cursor = cursor;
-    const data = wmGet_('/v3/orders', params);
-    const list = (data.list && data.list.elements && (data.list.elements.order || data.list.elements)) || data.orders || [];
-    all.push.apply(all, list);
-    cursor = (data.list && data.list.meta && data.list.meta.nextCursor) || data.nextCursor || null;
-    if (!cursor || !list.length) break;
-    Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
+function normalizeItem_(it) {
+  const price = it.price || {};
+  return {
+    sku:             it.sku || '',
+    productName:     it.productName || '',
+    productType:     it.productType || '',
+    shelf:           parseShelf_(it.shelf),
+    wpid:            it.wpid || '',
+    upc:             it.upc || '',
+    gtin:            it.gtin || '',
+    mart:            it.mart || '',
+    price:           price.amount != null ? price.amount : '',
+    currency:        price.currency || '',
+    publishedStatus: it.publishedStatus || '',
+    lifecycleStatus: it.lifecycleStatus || '',
+    unpublishedReasons: Array.isArray(it.unpublishedReasons)
+      ? it.unpublishedReasons.join('; ')
+      : (it.unpublishedReasons || ''),
+  };
+}
+
+/** shelf viene como string JSON: "[\"Home Page\",\"Computadoras\",...]" */
+function parseShelf_(shelf) {
+  if (!shelf) return '';
+  if (Array.isArray(shelf)) return shelf.join(' > ');
+  try {
+    const arr = JSON.parse(shelf);
+    return Array.isArray(arr) ? arr.join(' > ') : String(shelf);
+  } catch (e) {
+    return String(shelf);
   }
-  return all;
+}
+
+/* ==============================================================
+   INVENTARIO NORMAL — /v3/inventory?sku=X  (uno por uno)
+   ============================================================== */
+function getInventoryForSku(sku) {
+  try {
+    const data = wmGet_('/v3/inventory', { sku: sku });
+    const q = (data && data.quantity) || {};
+    return {
+      ok: true,
+      qty:  num_(q.amount),
+      unit: q.unit || 'EACH',
+    };
+  } catch (e) {
+    return { ok: false, qty: '', unit: '', error: (e.httpCode || 'ERR') };
+  }
+}
+
+function num_(v) {
+  if (v === null || v === undefined || v === '') return 0;
+  const n = Number(v);
+  return isNaN(n) ? 0 : n;
 }
