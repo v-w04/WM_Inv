@@ -1,242 +1,390 @@
 /**
  * ============================================================
- *  Sync — Fetch → normaliza → Sheet (persistente) → Cache (rápido)
+ *  Sync — Dos procesos independientes
  * ============================================================
  *
- *  Estrategia de lectura para el web app:
- *    1) CacheService  (rápido, 6h TTL)
- *    2) Google Sheet  (persistente, sin límite práctico)
- *    3) Walmart API   (solo si las dos anteriores están vacías, o con refresh explícito)
+ *  1) syncMain()          cada 10 min · catálogo (3,271) + WFS (471) ≈ 90 seg
+ *     → escribe la hoja "Inventario" completa
  *
- *  Así un cache expirado NO dispara un re-sync completo contra Walmart.
+ *  2) syncRegularChunk()  cada 5 min · barre inventario normal por partes
+ *     → escribe/actualiza la hoja "Inv_Normal", guarda su posición y continúa
+ *       en la siguiente corrida. Ciclo completo ≈ 2 h para 3,271 SKUs.
+ *
+ *  Usan LockService para no pisarse.
  */
 
-function syncFullInventory() {
-  const t0 = Date.now();
-  Logger.log('▶ Sync arrancando...');
-
-  const wfs = getAllWfsInventory();
-  Logger.log('  WFS inventory: ' + wfs.length);
-
-  const itemsBySku = {};
-  if (WM_CONFIG.FETCH_CATALOG_ITEMS) {
-    try {
-      const items = getAllItems();
-      Logger.log('  Catalog items: ' + items.length);
-      items.forEach(function(it){ if (it && it.sku) itemsBySku[it.sku] = it; });
-    } catch (e) { Logger.log('  ⚠ Items omitido: ' + e.message); }
+/* ============================================================
+   1. SYNC PRINCIPAL — catálogo + WFS
+   ============================================================ */
+function syncMain() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) {
+    Logger.log('⏭ syncMain: otra corrida en curso, se salta.');
+    return { skipped: true };
   }
 
-  const rows = wfs.map(function(e){ return normalizeRow_(e, itemsBySku); });
+  try {
+    const t0 = Date.now();
+    const deadline = t0 + WM_CONFIG.BUDGET_MAIN_MS;
+    Logger.log('▶ syncMain arrancando...');
 
-  // 1) Sheet primero (fuente persistente de verdad)
-  writeToSheet_(rows);
-  // 2) Cache después (capa caliente)
-  cacheData_(rows);
+    // WFS primero (rápido: 3 páginas)
+    const wfsList = getAllWfsInventory();
+    const wfsBySku = {};
+    wfsList.forEach(function(w){ if (w.sku) wfsBySku[w.sku] = w; });
 
-  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-  Logger.log('✅ Sync OK: ' + rows.length + ' filas en ' + elapsed + 's');
-  logRun_(rows.length, elapsed);
-  return { count: rows.length, elapsedSec: elapsed };
+    // Catálogo (66 páginas)
+    const items = getAllItems(deadline);
+    if (!items.length) throw new Error('El catálogo regresó vacío — revisa el log.');
+
+    // Merge: una fila por SKU del catálogo, con datos de WFS si aplica
+    const rows = items.map(function(it){
+      const w = wfsBySku[it.sku] || {};
+      return Object.assign({}, it, {
+        esWFS:            w.sku ? 'SÍ' : 'NO',
+        offerId:          w.offerId || '',
+        wfsDisponible:    w.wfsAvailToSell != null ? w.wfsAvailToSell : '',
+        wfsEnMano:        w.wfsOnHand != null ? w.wfsOnHand : '',
+        wfsReservado:     w.wfsReserved != null ? w.wfsReserved : '',
+        wfsInbound:       w.wfsInbound != null ? w.wfsInbound : '',
+        wfsEstado:        w.wfsStockStatus || '',
+        wfsTipoNodo:      w.wfsShipNodeType || '',
+        wfsActualizado:   w.wfsModifiedDate || '',
+        wfsPrimerStock:   w.wfsFirstInStock || '',
+        // Campos del endpoint nuevo (vacíos mientras siga el legacy)
+        wfsEdad0_90:      w.wfsAge0_90 != null ? w.wfsAge0_90 : '',
+        wfsEdad91_180:    w.wfsAge91_180 != null ? w.wfsAge91_180 : '',
+        wfsEdad181_270:   w.wfsAge181_270 != null ? w.wfsAge181_270 : '',
+        wfsEdad271_365:   w.wfsAge271_365 != null ? w.wfsAge271_365 : '',
+        wfsEdad365plus:   w.wfsAgeOver365 != null ? w.wfsAgeOver365 : '',
+        wfsProyS1_4:      w.wfsForecastW1_4 != null ? w.wfsForecastW1_4 : '',
+        wfsProyS5_8:      w.wfsForecastW5_8 != null ? w.wfsForecastW5_8 : '',
+        wfsProyS9_12:     w.wfsForecastW9_12 != null ? w.wfsForecastW9_12 : '',
+        wfsSellThrough:   w.wfsSellThrough != null ? w.wfsSellThrough : '',
+        wfsDiasSupply:    w.wfsDaysOfSupply != null ? w.wfsDaysOfSupply : '',
+        wfsFechaOOS:      w.wfsOutOfStockDate || '',
+        wfsSugeridas:     w.wfsSuggestedUnits != null ? w.wfsSuggestedUnits : '',
+        wfsExcedente:     w.wfsSurplusUnits != null ? w.wfsSurplusUnits : '',
+      });
+    });
+
+    writeMasterSheet_(rows);
+    ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
+    resetInvCursor_();
+    invalidateCache_();
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const conWfs = rows.filter(function(r){ return r.esWFS === 'SÍ'; }).length;
+    Logger.log('✅ syncMain OK: ' + rows.length + ' SKUs (' + conWfs + ' en WFS) en ' + elapsed + 's');
+    logRun_('syncMain', rows.length, elapsed, conWfs + ' en WFS');
+    return { count: rows.length, wfs: conWfs, elapsedSec: elapsed };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /* ============================================================
-   Normalización
+   2. BARRIDO POR PARTES — inventario normal (1 llamada por SKU)
    ============================================================ */
-function normalizeRow_(entry, itemsBySku) {
-  const info  = entry.itemInformation   || {};
-  const data  = entry.inventoryData     || {};
-  const ins   = entry.inventoryInsights || {};
-  const age   = data.inventoryAge       || {};
-  const unav  = data.unavailableUnits   || {};
-  const item  = itemsBySku[info.sku]    || {};
-  const price = item.price              || {};
+function syncRegularChunk() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) {
+    Logger.log('⏭ syncRegularChunk: otra corrida en curso, se salta.');
+    return { skipped: true };
+  }
 
-  return {
-    sku: info.sku || '',
-    itemName: info.itemName || item.productName || '',
-    brand: info.brand || '',
-    gtin: info.gtin || '',
-    upc: item.upc || '',
-    wpid: item.wpid || info.itemID || '',
-    offerID: info.offerID || '',
-    itemCondition: info.itemCondition || '',
-    productType: item.productType || '',
-    shelf: item.shelf || '',
-    mart: item.mart || '',
-    publishingStatus: data.publishingStatus || item.publishedStatus || '',
-    itemLifecycle: data.itemLifecycle || item.lifecycleStatus || '',
-    stockStatus: data.stockStatus || '',
-    availableUnits: n_(data.availableUnits),
-    reservedUnits: n_(data.reservedUnits),
-    inboundUnits: n_(data.inboundUnits),
-    onhandUnits: n_(data.onhandUnits),
-    inventoryReviewUnits: n_(unav.inventoryReviewUnits),
-    inventoryMovementUnits: n_(unav.inventoryMovementUnits),
-    age_0_90: n_(age.units0to90Days),
-    age_91_180: n_(age.units91to180Days),
-    age_181_270: n_(age.units181to270Days),
-    age_271_365: n_(age.units271to365Days),
-    age_over_365: n_(age.unitsOver365Days),
-    firstInStockDate: data.firstInStockDate || '',
-    forecast_w1_4: n_(ins.salesForecastWeek1to4),
-    forecast_w5_8: n_(ins.salesForecastWeek5to8),
-    forecast_w9_12: n_(ins.salesForecastWeek9to12),
-    sellThroughRate: n_(ins.sellThroughRate),
-    daysOfSupply: n_(ins.daysOfSupply),
-    outOfStockDate: ins.outOfStockDate || '',
-    suggestedUnits: n_(ins.suggestedUnits),
-    surplusUnits: n_(ins.surplusUnits),
-    price: price.amount || '',
-    currency: price.currency || (price.amount ? 'MXN' : ''),
-    unpublishedReasons: Array.isArray(item.unpublishedReasons) ? item.unpublishedReasons.join('; ') : (item.unpublishedReasons || ''),
-    lastSync: new Date().toISOString(),
-  };
+  try {
+    const t0 = Date.now();
+    const deadline = t0 + WM_CONFIG.BUDGET_CHUNK_MS;
+
+    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    const lastRow = sh.getLastRow();
+    if (lastRow < 2) {
+      Logger.log('⏭ Inv_Normal vacía. Corre syncMain() primero.');
+      return { skipped: true, reason: 'sin SKUs' };
+    }
+
+    const totalSkus = lastRow - 1;
+    let cursor = getInvCursor_();
+    if (cursor >= totalSkus) cursor = 0;   // ciclo terminado → vuelve a empezar
+
+    // Lee los SKUs pendientes desde el cursor
+    const remaining = totalSkus - cursor;
+    const skus = sh.getRange(cursor + 2, 1, remaining, 1).getValues();
+
+    Logger.log('▶ Barrido inv. normal desde ' + cursor + ' / ' + totalSkus);
+
+    const results = [];
+    let i = 0;
+    let errores = 0;
+
+    for (i = 0; i < skus.length; i++) {
+      if (Date.now() > deadline) break;
+
+      const sku = String(skus[i][0] || '').trim();
+      if (!sku) { results.push(['', '', '', '']); continue; }
+
+      const inv = getInventoryForSku(sku);
+      if (!inv.ok) errores++;
+      results.push([sku, inv.qty, inv.unit, new Date()]);
+
+      Utilities.sleep(WM_CONFIG.SKU_PACING_MS);
+    }
+
+    // Escribe el bloque procesado
+    if (results.length) {
+      sh.getRange(cursor + 2, 1, results.length, 4).setValues(results);
+      SpreadsheetApp.flush();
+    }
+
+    const newCursor = cursor + results.length;
+    setInvCursor_(newCursor >= totalSkus ? 0 : newCursor);
+    invalidateCache_();
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const pct = ((newCursor / totalSkus) * 100).toFixed(1);
+    const ciclo = newCursor >= totalSkus ? ' · CICLO COMPLETO ✓' : '';
+    Logger.log('✅ Barrido: ' + results.length + ' SKUs en ' + elapsed + 's · ' +
+               newCursor + '/' + totalSkus + ' (' + pct + '%)' + ciclo +
+               (errores ? ' · ' + errores + ' errores' : ''));
+    logRun_('chunk', results.length, elapsed, newCursor + '/' + totalSkus + ' (' + pct + '%)');
+
+    return { processed: results.length, cursor: newCursor, total: totalSkus, elapsedSec: elapsed };
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
-function n_(v) {
-  if (v === null || v === undefined || v === '') return 0;
+/* ============================================================
+   Cursor del barrido
+   ============================================================ */
+function getInvCursor_() {
+  const v = PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_INV_CURSOR);
   const n = Number(v);
   return isNaN(n) ? 0 : n;
 }
+function setInvCursor_(n) {
+  PropertiesService.getScriptProperties().setProperty(WM_CONFIG.PROP_INV_CURSOR, String(n));
+}
+function resetInvCursor_() {
+  setInvCursor_(0);
+}
 
-/* ============================================================
-   LECTURA para el web app: cache → sheet → (nada)
-   ============================================================ */
-function loadRows_() {
-  const cached = getCachedData();
-  if (cached && cached.length) return { rows: cached, source: 'cache', ts: getCachedTimestamp() };
-
-  const fromSheet = readFromSheet_();
-  if (fromSheet && fromSheet.length) {
-    // repuebla el cache para las siguientes lecturas
-    cacheData_(fromSheet);
-    return { rows: fromSheet, source: 'sheet', ts: getSheetTimestamp_() };
-  }
-  return { rows: [], source: 'empty', ts: 0 };
+/** Fuerza que el barrido empiece de cero */
+function reiniciarBarrido() {
+  resetInvCursor_();
+  Logger.log('✅ Barrido reiniciado desde el SKU 0.');
 }
 
 /* ============================================================
-   Cache (capa caliente)
+   Escritura de hojas
    ============================================================ */
-function cacheData_(rows) {
+const MASTER_COLS = [
+  'sku', 'productName', 'productType', 'shelf',
+  'wpid', 'upc', 'gtin', 'mart',
+  'price', 'currency', 'publishedStatus', 'lifecycleStatus', 'unpublishedReasons',
+  'esWFS', 'offerId',
+  'wfsDisponible', 'wfsEnMano', 'wfsReservado', 'wfsInbound',
+  'wfsEstado', 'wfsTipoNodo', 'wfsActualizado', 'wfsPrimerStock',
+  'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270', 'wfsEdad271_365', 'wfsEdad365plus',
+  'wfsProyS1_4', 'wfsProyS5_8', 'wfsProyS9_12',
+  'wfsSellThrough', 'wfsDiasSupply', 'wfsFechaOOS', 'wfsSugeridas', 'wfsExcedente',
+];
+
+function writeMasterSheet_(rows) {
+  if (!rows || !rows.length) return;
+  const sh = getSheet_(WM_CONFIG.SHEET_MASTER);
+
+  const values = [MASTER_COLS].concat(rows.map(function(r){
+    return MASTER_COLS.map(function(c){ return r[c] != null ? r[c] : ''; });
+  }));
+
+  sh.clearContents();
+  SpreadsheetApp.flush();
+  sh.getRange(1, 1, values.length, MASTER_COLS.length).setValues(values);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, MASTER_COLS.length)
+    .setFontWeight('bold').setBackground('#0071dc').setFontColor('#ffffff');
+  SpreadsheetApp.flush();
+}
+
+/**
+ * Prepara la hoja de inventario normal con la misma lista y orden de SKUs
+ * que el master. Conserva las cantidades ya obtenidas de los SKUs que siguen existiendo.
+ */
+function ensureRegularSheet_(skus) {
+  const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+  const headers = ['sku', 'cantidad', 'unidad', 'revisadoEn'];
+
+  // Conserva lo ya barrido
+  const previo = {};
+  const lastRow = sh.getLastRow();
+  if (lastRow > 1) {
+    const old = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+    old.forEach(function(r){
+      const s = String(r[0] || '').trim();
+      if (s) previo[s] = [r[1], r[2], r[3]];
+    });
+  }
+
+  const values = [headers].concat(skus.map(function(s){
+    const p = previo[s];
+    return p ? [s, p[0], p[1], p[2]] : [s, '', '', ''];
+  }));
+
+  sh.clearContents();
+  SpreadsheetApp.flush();
+  sh.getRange(1, 1, values.length, 4).setValues(values);
+  sh.setFrozenRows(1);
+  sh.getRange(1, 1, 1, 4)
+    .setFontWeight('bold').setBackground('#0a8f3f').setFontColor('#ffffff');
+  SpreadsheetApp.flush();
+}
+
+/* ============================================================
+   LECTURA para el web app — merge de las dos hojas
+   ============================================================ */
+function loadRows_() {
+  const cached = getCachedData();
+  if (cached && cached.rows && cached.rows.length) return cached;
+
+  const master = readSheetAsObjects_(WM_CONFIG.SHEET_MASTER);
+  if (!master.length) return { rows: [], ts: 0, progress: null };
+
+  // Merge con inventario normal
+  const regular = {};
   try {
-    const json = JSON.stringify(rows);
+    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    const lastRow = sh.getLastRow();
+    if (lastRow > 1) {
+      const vals = sh.getRange(2, 1, lastRow - 1, 4).getValues();
+      vals.forEach(function(r){
+        const s = String(r[0] || '').trim();
+        if (s) regular[s] = {
+          invNormal:  r[1] === '' ? '' : Number(r[1]),
+          invUnidad:  r[2] || '',
+          invRevisado: r[3] instanceof Date ? r[3].toISOString() : (r[3] || ''),
+        };
+      });
+    }
+  } catch (e) {
+    Logger.log('⚠ No se pudo leer Inv_Normal: ' + e.message);
+  }
+
+  const rows = master.map(function(m){
+    const r = regular[m.sku] || {};
+    return Object.assign({}, m, {
+      invNormal:   r.invNormal !== undefined ? r.invNormal : '',
+      invUnidad:   r.invUnidad || '',
+      invRevisado: r.invRevisado || '',
+    });
+  });
+
+  const cursor = getInvCursor_();
+  const progress = {
+    cursor: cursor,
+    total: master.length,
+    pct: master.length ? Math.round((cursor / master.length) * 100) : 0,
+  };
+
+  const payload = { rows: rows, ts: Date.now(), progress: progress };
+  cacheData_(payload);
+  return payload;
+}
+
+function readSheetAsObjects_(sheetName) {
+  try {
+    const sh = getSpreadsheet_().getSheetByName(sheetName);
+    if (!sh) return [];
+    const lastRow = sh.getLastRow(), lastCol = sh.getLastColumn();
+    if (lastRow < 2 || lastCol < 1) return [];
+
+    const values = sh.getRange(1, 1, lastRow, lastCol).getValues();
+    const headers = values[0].map(String);
+    const out = [];
+    for (let i = 1; i < values.length; i++) {
+      const o = {};
+      for (let j = 0; j < headers.length; j++) {
+        const v = values[i][j];
+        o[headers[j]] = (v instanceof Date) ? v.toISOString() : v;
+      }
+      out.push(o);
+    }
+    return out;
+  } catch (e) {
+    Logger.log('⚠ readSheetAsObjects_(' + sheetName + '): ' + e.message);
+    return [];
+  }
+}
+
+/* ============================================================
+   Cache
+   ============================================================ */
+function cacheData_(payload) {
+  try {
+    const json = JSON.stringify(payload);
     if (json.length > WM_CONFIG.MAX_CACHE_BYTES) {
-      Logger.log('  ⚠ Dataset ' + Math.round(json.length/1024) + 'KB excede cache; se servirá desde Sheet.');
+      Logger.log('  ℹ Dataset ' + Math.round(json.length/1024) + 'KB — se sirve desde Sheet');
       return;
     }
     const cache = CacheService.getScriptCache();
     const chunkSize = 90 * 1024;
     const chunks = [];
     for (let i = 0; i < json.length; i += chunkSize) chunks.push(json.substring(i, i + chunkSize));
-    const payload = {};
-    payload[WM_CONFIG.CACHE_INVENTORY + '_chunks'] = String(chunks.length);
-    payload[WM_CONFIG.CACHE_INVENTORY + '_ts'] = String(Date.now());
-    chunks.forEach(function(c, i){ payload[WM_CONFIG.CACHE_INVENTORY + '_' + i] = c; });
-    cache.putAll(payload, WM_CONFIG.CACHE_TTL_SECONDS);
+    const put = {};
+    put[WM_CONFIG.CACHE_INVENTORY + '_n'] = String(chunks.length);
+    chunks.forEach(function(c, i){ put[WM_CONFIG.CACHE_INVENTORY + '_' + i] = c; });
+    cache.putAll(put, WM_CONFIG.CACHE_TTL_SECONDS);
   } catch (e) {
-    Logger.log('  ⚠ Cache falló (no es crítico): ' + e.message);
+    Logger.log('  ⚠ Cache falló (no crítico): ' + e.message);
   }
 }
 
 function getCachedData() {
   try {
     const cache = CacheService.getScriptCache();
-    const nStr = cache.get(WM_CONFIG.CACHE_INVENTORY + '_chunks');
+    const nStr = cache.get(WM_CONFIG.CACHE_INVENTORY + '_n');
     if (!nStr) return null;
     const n = Number(nStr);
     let json = '';
     for (let i = 0; i < n; i++) {
       const c = cache.get(WM_CONFIG.CACHE_INVENTORY + '_' + i);
-      if (c === null) return null;   // chunk perdido → cache inválido
+      if (c === null) return null;
       json += c;
     }
     return JSON.parse(json);
   } catch (e) { return null; }
 }
 
-function getCachedTimestamp() {
-  const ts = CacheService.getScriptCache().get(WM_CONFIG.CACHE_INVENTORY + '_ts');
-  return ts ? Number(ts) : 0;
+function invalidateCache_() {
+  try {
+    const cache = CacheService.getScriptCache();
+    const nStr = cache.get(WM_CONFIG.CACHE_INVENTORY + '_n');
+    if (!nStr) return;
+    const keys = [WM_CONFIG.CACHE_INVENTORY + '_n'];
+    for (let i = 0; i < Number(nStr); i++) keys.push(WM_CONFIG.CACHE_INVENTORY + '_' + i);
+    cache.removeAll(keys);
+  } catch (e) {}
 }
 
 /* ============================================================
-   Sheet (fuente persistente)
+   Log
    ============================================================ */
-function writeToSheet_(rows) {
-  if (!rows || !rows.length) return;
-  const ss = getSpreadsheet_();
-  let sh = ss.getSheetByName(WM_CONFIG.SHEET_INVENTORY);
-  if (!sh) sh = ss.insertSheet(WM_CONFIG.SHEET_INVENTORY);
-
-  const headers = Object.keys(rows[0]);
-  const values = [headers].concat(rows.map(function(r){
-    return headers.map(function(h){ return r[h]; });
-  }));
-
-  // clearContents antes de escribir (evita residuos de corridas más grandes)
-  sh.clearContents();
-  SpreadsheetApp.flush();
-  sh.getRange(1, 1, values.length, headers.length).setValues(values);
-  sh.setFrozenRows(1);
-  sh.getRange(1, 1, 1, headers.length)
-    .setFontWeight('bold').setBackground('#0071dc').setFontColor('#ffffff');
-  SpreadsheetApp.flush();
-}
-
-function readFromSheet_() {
+function logRun_(tipo, count, elapsed, nota) {
   try {
-    const ss = getSpreadsheet_();
-    const sh = ss.getSheetByName(WM_CONFIG.SHEET_INVENTORY);
-    if (!sh) return null;
-    const lastRow = sh.getLastRow();
-    const lastCol = sh.getLastColumn();
-    if (lastRow < 2 || lastCol < 1) return null;
-
-    const values = sh.getRange(1, 1, lastRow, lastCol).getValues();
-    const headers = values[0].map(String);
-    const rows = [];
-    for (let i = 1; i < values.length; i++) {
-      const obj = {};
-      for (let j = 0; j < headers.length; j++) {
-        const v = values[i][j];
-        obj[headers[j]] = (v instanceof Date) ? v.toISOString() : v;
-      }
-      rows.push(obj);
+    const sh = getSheet_(WM_CONFIG.SHEET_LOG);
+    if (sh.getLastRow() === 0) {
+      sh.appendRow(['Timestamp', 'Proceso', 'Filas', 'Segundos', 'Nota']);
+      sh.getRange(1, 1, 1, 5).setFontWeight('bold');
     }
-    return rows;
-  } catch (e) {
-    Logger.log('  ⚠ readFromSheet_ falló: ' + e.message);
-    return null;
-  }
-}
-
-function getSheetTimestamp_() {
-  try {
-    const ss = getSpreadsheet_();
-    const log = ss.getSheetByName(WM_CONFIG.SHEET_LOG);
-    if (!log || log.getLastRow() < 2) return 0;
-    const v = log.getRange(log.getLastRow(), 1).getValue();
-    return (v instanceof Date) ? v.getTime() : 0;
-  } catch (e) { return 0; }
-}
-
-function logRun_(count, elapsed) {
-  try {
-    const ss = getSpreadsheet_();
-    let log = ss.getSheetByName(WM_CONFIG.SHEET_LOG);
-    if (!log) {
-      log = ss.insertSheet(WM_CONFIG.SHEET_LOG);
-      log.appendRow(['Timestamp', 'Rows', 'Elapsed (s)']);
-      log.getRange(1, 1, 1, 3).setFontWeight('bold');
-    }
-    log.appendRow([new Date(), count, elapsed]);
-  } catch (e) { Logger.log('  ⚠ logRun_ falló: ' + e.message); }
+    sh.appendRow([new Date(), tipo, count, elapsed, nota || '']);
+  } catch (e) {}
 }
 
 /* ============================================================
-   Utilidad de diagnóstico
+   Diagnóstico
    ============================================================ */
 function testSheetAccess() {
   try {
@@ -247,5 +395,33 @@ function testSheetAccess() {
   } catch (e) {
     Logger.log('❌ ' + e.message);
     return false;
+  }
+}
+
+/** Muestra en qué va el barrido de inventario normal */
+function verProgreso() {
+  try {
+    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    const total = Math.max(0, sh.getLastRow() - 1);
+    const cursor = getInvCursor_();
+    const pct = total ? ((cursor / total) * 100).toFixed(1) : '0';
+
+    let conDato = 0;
+    if (total > 0) {
+      const vals = sh.getRange(2, 2, total, 1).getValues();
+      conDato = vals.filter(function(r){ return r[0] !== '' && r[0] !== null; }).length;
+    }
+
+    Logger.log('── PROGRESO DEL BARRIDO ──');
+    Logger.log('  Total de SKUs:      ' + total);
+    Logger.log('  Cursor actual:      ' + cursor + '  (' + pct + '%)');
+    Logger.log('  SKUs con inventario: ' + conDato);
+    Logger.log('  Endpoint WFS:       ' +
+      (PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_WFS_ENDPOINT) || 'sin detectar'));
+    const faltan = Math.max(0, total - cursor);
+    const corridas = Math.ceil(faltan / 280);
+    Logger.log('  Faltan ~' + corridas + ' corridas (~' + (corridas * WM_CONFIG.CHUNK_INTERVAL_MIN) + ' min)');
+  } catch (e) {
+    Logger.log('❌ ' + e.message);
   }
 }

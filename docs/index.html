@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Walmart WFS Dashboard — Electronics MX</title>
+<title>Inventario Walmart — Electronics MX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="style.css">
@@ -10,16 +10,16 @@
 </head>
 <body>
 
-<!-- Pantalla de login -->
+<!-- ══════════ Login ══════════ -->
 <div id="loginScreen" class="login-screen">
   <div class="login-card">
     <div class="logo">📦</div>
-    <h1>Walmart WFS Dashboard</h1>
+    <h1>Inventario Walmart</h1>
     <p class="subtitle">Electronics México</p>
     <form id="loginForm">
       <label>
         <span>Contraseña</span>
-        <input type="password" id="loginPassword" autocomplete="current-password" required>
+        <input type="password" id="loginPassword" autocomplete="current-password" required autofocus>
       </label>
       <label class="checkbox">
         <input type="checkbox" id="rememberMe" checked>
@@ -28,41 +28,44 @@
       <button type="submit" class="primary" id="loginBtn">Entrar</button>
       <div id="loginMsg" class="msg"></div>
     </form>
-    <p class="footnote">La sesión dura 12 horas. Tus credenciales de Walmart nunca salen del backend.</p>
+    <p class="footnote">La sesión dura 12 horas. Las credenciales de Walmart nunca salen del backend.</p>
   </div>
 </div>
 
-<!-- Dashboard -->
+<!-- ══════════ Dashboard ══════════ -->
 <div id="dashboard" hidden>
   <header>
-    <div>
-      <h1>Walmart WFS Dashboard</h1>
+    <div class="header-left">
+      <h1>Inventario Walmart</h1>
       <div class="meta">Electronics México · <span id="marketLabel">MX</span></div>
     </div>
-    <div class="meta">
+    <div class="header-right">
       <span class="pill" id="rowCount">0 SKUs</span>
+      <span class="pill" id="wfsBadge">WFS</span>
       <span class="pill" id="lastSync">—</span>
       <button class="btn-ghost" id="btnLogout">Salir</button>
     </div>
   </header>
 
+  <!-- Barra de progreso del barrido de inventario normal -->
+  <div id="scanProgress" class="scan-progress" hidden></div>
+
   <main>
     <div class="toolbar">
       <div class="row">
-        <input type="text" id="globalSearch" placeholder="🔍 Buscar en toda la tabla…">
-        <button id="btnRefresh" class="primary">↻ Refrescar</button>
+        <input type="text" id="globalSearch" placeholder="🔍 Buscar SKU, producto, categoría…">
+        <button id="btnRefresh" class="primary" title="Vuelve a jalar catálogo + WFS desde Walmart (~90 seg)">↻ Refrescar</button>
         <button id="btnCols">▤ Columnas</button>
         <button id="btnExportXlsx">⬇ XLSX</button>
         <button id="btnExportCsv">⬇ CSV</button>
         <button id="btnExportPdf">⬇ PDF</button>
         <button id="btnClearFilters">✕ Limpiar filtros</button>
         <div class="spacer"></div>
-        <label class="auto-label">Auto:
+        <label class="auto-label">Auto-recarga:
           <select id="autoInterval">
-            <option value="0">off</option>
-            <option value="60">1 min</option>
+            <option value="0" selected>off</option>
             <option value="300">5 min</option>
-            <option value="600" selected>10 min</option>
+            <option value="600">10 min</option>
             <option value="1800">30 min</option>
           </select>
         </label>
@@ -74,7 +77,9 @@
         <strong>Mostrar columnas</strong>
         <button class="btn-mini" onclick="toggleAllCols(true)">Todas</button>
         <button class="btn-mini" onclick="toggleAllCols(false)">Ninguna</button>
+        <button class="btn-mini" onclick="resetCols()">Por defecto</button>
         <div class="spacer"></div>
+        <span class="hint">🔒 = requiere WFS avanzado</span>
         <button class="btn-mini" onclick="document.getElementById('colsPanel').hidden = true">Cerrar</button>
       </div>
       <div class="cols-grid" id="colsGrid"></div>
@@ -93,12 +98,9 @@
   </main>
 </div>
 
-<!-- Librerías externas -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
-
-<!-- Config y app -->
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>

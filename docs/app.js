@@ -1,6 +1,6 @@
 /**
- * Walmart WFS Dashboard — Frontend
- * Se conecta al backend en Apps Script via fetch cross-origin.
+ * WM_Inv — Walmart Dashboard · Frontend
+ * Se conecta al backend en Apps Script vía fetch cross-origin.
  */
 
 /* ============================================================
@@ -14,66 +14,105 @@ const STATE = {
   filters: {},
   sort: { key: null, dir: 1 },
   autoTimer: null,
+  progressTimer: null,
 };
 
-const STORAGE_KEY_TOKEN = 'wm_dash_token';
-const STORAGE_KEY_TOKEN_TS = 'wm_dash_token_ts';
+const STORAGE_TOKEN = 'wm_dash_token';
+const STORAGE_TOKEN_TS = 'wm_dash_token_ts';
+const STORAGE_COLS = 'wm_dash_cols';
 
+/* Columnas numéricas (alineadas a la derecha y ordenadas como número) */
 const NUM_COLS = new Set([
-  'availableUnits','reservedUnits','inboundUnits','onhandUnits',
-  'inventoryReviewUnits','inventoryMovementUnits',
-  'age_0_90','age_91_180','age_181_270','age_271_365','age_over_365',
-  'forecast_w1_4','forecast_w5_8','forecast_w9_12',
-  'sellThroughRate','daysOfSupply','suggestedUnits','surplusUnits','price'
+  'price', 'wfsDisponible', 'wfsEnMano', 'wfsReservado', 'wfsInbound',
+  'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270', 'wfsEdad271_365', 'wfsEdad365plus',
+  'wfsProyS1_4', 'wfsProyS5_8', 'wfsProyS9_12',
+  'wfsSellThrough', 'wfsDiasSupply', 'wfsSugeridas', 'wfsExcedente',
+  'invNormal',
 ]);
 
+/* Etiquetas legibles */
 const COL_LABELS = {
-  sku:'SKU', itemName:'Producto', brand:'Marca', gtin:'GTIN', upc:'UPC',
-  wpid:'WPID (Walmart ID)', offerID:'Offer ID', itemCondition:'Condición',
-  productType:'Tipo', shelf:'Shelf', mart:'Mart',
-  publishingStatus:'Publish Status', itemLifecycle:'Lifecycle', stockStatus:'Stock',
-  availableUnits:'Disponible', reservedUnits:'Reservado', inboundUnits:'Inbound', onhandUnits:'On-hand',
-  inventoryReviewUnits:'En Revisión', inventoryMovementUnits:'En Movimiento',
-  age_0_90:'Edad 0-90d', age_91_180:'Edad 91-180d', age_181_270:'Edad 181-270d',
-  age_271_365:'Edad 271-365d', age_over_365:'Edad 365+d',
-  firstInStockDate:'Primer stock',
-  forecast_w1_4:'Forecast S1-4', forecast_w5_8:'Forecast S5-8', forecast_w9_12:'Forecast S9-12',
-  sellThroughRate:'Sell-through', daysOfSupply:'Días supply',
-  outOfStockDate:'Fecha OOS', suggestedUnits:'Sugeridas', surplusUnits:'Excedente',
-  price:'Precio', currency:'Moneda',
-  unpublishedReasons:'Razón unpub', lastSync:'Sync'
+  sku: 'SKU',
+  productName: 'Producto',
+  productType: 'Tipo',
+  shelf: 'Categoría',
+  wpid: 'WPID',
+  upc: 'UPC',
+  gtin: 'GTIN',
+  mart: 'Mart',
+  price: 'Precio',
+  currency: 'Moneda',
+  publishedStatus: 'Publicación',
+  lifecycleStatus: 'Ciclo de vida',
+  unpublishedReasons: 'Razón despublicado',
+  esWFS: '¿WFS?',
+  offerId: 'Offer ID',
+  wfsDisponible: 'WFS Disponible',
+  wfsEnMano: 'WFS En mano',
+  wfsReservado: 'WFS Reservado',
+  wfsInbound: 'WFS Inbound',
+  wfsEstado: 'WFS Estado',
+  wfsTipoNodo: 'WFS Tipo nodo',
+  wfsActualizado: 'WFS Actualizado',
+  wfsPrimerStock: 'WFS Primer stock',
+  wfsEdad0_90: 'Edad 0-90d',
+  wfsEdad91_180: 'Edad 91-180d',
+  wfsEdad181_270: 'Edad 181-270d',
+  wfsEdad271_365: 'Edad 271-365d',
+  wfsEdad365plus: 'Edad 365+d',
+  wfsProyS1_4: 'Proy. S1-4',
+  wfsProyS5_8: 'Proy. S5-8',
+  wfsProyS9_12: 'Proy. S9-12',
+  wfsSellThrough: 'Sell-through',
+  wfsDiasSupply: 'Días supply',
+  wfsFechaOOS: 'Fecha agotamiento',
+  wfsSugeridas: 'Sugeridas',
+  wfsExcedente: 'Excedente',
+  invNormal: 'Inv. Normal',
+  invUnidad: 'Unidad',
+  invRevisado: 'Inv. revisado',
 };
 
+/* Columnas visibles por default (las más útiles) */
+const DEFAULT_COLS = [
+  'sku', 'productName', 'productType', 'price', 'publishedStatus',
+  'esWFS', 'wfsDisponible', 'wfsEnMano', 'wfsEstado', 'invNormal',
+];
+
+/* Columnas vacías mientras Walmart no habilite el endpoint WFS nuevo */
+const LOCKED_COLS = new Set([
+  'wfsInbound', 'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270',
+  'wfsEdad271_365', 'wfsEdad365plus', 'wfsProyS1_4', 'wfsProyS5_8',
+  'wfsProyS9_12', 'wfsSellThrough', 'wfsDiasSupply', 'wfsFechaOOS',
+  'wfsSugeridas', 'wfsExcedente',
+]);
+
 /* ============================================================
-   Init: si hay token guardado, salta directo al dashboard
+   Init
    ============================================================ */
-document.addEventListener('DOMContentLoaded', async () => {
-  // Config check
+document.addEventListener('DOMContentLoaded', () => {
   if (!window.APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PON_AQUI') >= 0) {
-    document.getElementById('loginMsg').className = 'msg error';
-    document.getElementById('loginMsg').textContent = 'Falta configurar APPS_SCRIPT_URL en config.js';
+    showLoginError('Falta configurar APPS_SCRIPT_URL en config.js');
     return;
   }
 
-  // Login form
   document.getElementById('loginForm').addEventListener('submit', onLogin);
-
-  // Dashboard controls
   document.getElementById('btnLogout').onclick = onLogout;
   document.getElementById('btnRefresh').onclick = () => load(true);
-  document.getElementById('btnCols').onclick = () => document.getElementById('colsPanel').hidden = !document.getElementById('colsPanel').hidden;
+  document.getElementById('btnCols').onclick = () => {
+    const p = document.getElementById('colsPanel');
+    p.hidden = !p.hidden;
+  };
   document.getElementById('btnExportXlsx').onclick = exportXlsx;
   document.getElementById('btnExportCsv').onclick = exportCsv;
   document.getElementById('btnExportPdf').onclick = exportPdf;
   document.getElementById('btnClearFilters').onclick = clearFilters;
   document.getElementById('globalSearch').addEventListener('input', render);
-  document.getElementById('autoInterval').addEventListener('change', (e) => setAutoRefresh(Number(e.target.value)));
+  document.getElementById('autoInterval').addEventListener('change', e => setAutoRefresh(Number(e.target.value)));
 
-  // ¿Hay token válido guardado?
-  const savedToken = localStorage.getItem(STORAGE_KEY_TOKEN);
-  const savedTs = Number(localStorage.getItem(STORAGE_KEY_TOKEN_TS) || 0);
-  const twelveHoursMs = 12 * 60 * 60 * 1000;
-  if (savedToken && (Date.now() - savedTs) < twelveHoursMs) {
+  const savedToken = localStorage.getItem(STORAGE_TOKEN);
+  const savedTs = Number(localStorage.getItem(STORAGE_TOKEN_TS) || 0);
+  if (savedToken && (Date.now() - savedTs) < 12 * 3600 * 1000) {
     STATE.token = savedToken;
     enterDashboard();
   }
@@ -85,65 +124,72 @@ document.addEventListener('DOMContentLoaded', async () => {
 async function onLogin(e) {
   e.preventDefault();
   const btn = document.getElementById('loginBtn');
-  const msg = document.getElementById('loginMsg');
   const pw = document.getElementById('loginPassword').value;
   btn.disabled = true;
   btn.textContent = 'Verificando…';
-  msg.className = 'msg';
-  msg.textContent = '';
+  clearLoginMsg();
 
   try {
     const res = await apiCall({ action: 'login', password: pw });
-    if (!res.ok) throw new Error(res.error || 'Login failed');
+    if (!res.ok) throw new Error(res.error || 'Login falló');
     STATE.token = res.token;
     if (document.getElementById('rememberMe').checked) {
-      localStorage.setItem(STORAGE_KEY_TOKEN, res.token);
-      localStorage.setItem(STORAGE_KEY_TOKEN_TS, String(Date.now()));
+      localStorage.setItem(STORAGE_TOKEN, res.token);
+      localStorage.setItem(STORAGE_TOKEN_TS, String(Date.now()));
     }
     enterDashboard();
   } catch (err) {
-    msg.className = 'msg error';
-    msg.textContent = err.message || 'Error de login';
+    showLoginError(err.message || 'Error de login');
     btn.disabled = false;
     btn.textContent = 'Entrar';
   }
 }
 
+function showLoginError(msg) {
+  const el = document.getElementById('loginMsg');
+  el.className = 'msg error';
+  el.textContent = msg;
+}
+function clearLoginMsg() {
+  const el = document.getElementById('loginMsg');
+  el.className = 'msg';
+  el.textContent = '';
+}
+
 function enterDashboard() {
   document.getElementById('loginScreen').hidden = true;
   document.getElementById('dashboard').hidden = false;
-  setAutoRefresh(600);
+  setAutoRefresh(0);           // el servidor ya refresca cada 10 min
+  startProgressPolling();
   load(false);
 }
 
 async function onLogout() {
   try { await apiCall({ action: 'logout', token: STATE.token }); } catch (_) {}
-  localStorage.removeItem(STORAGE_KEY_TOKEN);
-  localStorage.removeItem(STORAGE_KEY_TOKEN_TS);
+  localStorage.removeItem(STORAGE_TOKEN);
+  localStorage.removeItem(STORAGE_TOKEN_TS);
   location.reload();
 }
 
 /* ============================================================
-   API call — POST form-urlencoded (evita preflight CORS)
+   API — POST form-urlencoded (evita preflight CORS)
    ============================================================ */
 async function apiCall(params) {
   const body = new URLSearchParams();
   Object.keys(params).forEach(k => body.append(k, params[k]));
-  const resp = await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    body: body,   // sin headers custom = "simple request" en CORS
-    redirect: 'follow',
-  });
+  const resp = await fetch(APPS_SCRIPT_URL, { method: 'POST', body, redirect: 'follow' });
   const text = await resp.text();
   try { return JSON.parse(text); }
   catch (e) { throw new Error('Respuesta inválida del backend: ' + text.substring(0, 200)); }
 }
 
 /* ============================================================
-   Data loading
+   Carga de datos
    ============================================================ */
 async function load(force) {
-  showLoading(force ? 'Refrescando desde Walmart API…' : 'Cargando inventario…');
+  showLoading(force
+    ? 'Refrescando catálogo + WFS desde Walmart… (~90 seg)'
+    : 'Cargando inventario…');
   try {
     const res = await apiCall({ action: force ? 'refresh' : 'inventory', token: STATE.token });
     if (!res.ok) {
@@ -158,63 +204,131 @@ async function load(force) {
 
 function onLoaded(res) {
   STATE.rows = res.rows || [];
-  document.getElementById('marketLabel').textContent = (res.market || 'mx').toUpperCase() + (res.sandbox ? ' · SANDBOX' : '');
+  document.getElementById('marketLabel').textContent = (res.market || 'mx').toUpperCase();
   document.getElementById('lastSync').textContent = 'Sync: ' + formatTime(res.fetchedAt);
+  updateProgressUI(res.progress);
+  updateWfsBadge(res.wfsMode);
   buildColumns();
   render();
 }
 
 function onError(e) {
-  document.getElementById('emptyState').innerHTML = '<span style="color:var(--danger)">❌ ' + escapeHtml(e.message || String(e)) + '</span>';
-  document.getElementById('emptyState').hidden = false;
+  const el = document.getElementById('emptyState');
+  el.innerHTML = '<span style="color:var(--danger)">❌ ' + escapeHtml(e.message || String(e)) + '</span>';
+  el.hidden = false;
   document.getElementById('tbl').hidden = true;
 }
 
 function showLoading(msg) {
   const el = document.getElementById('emptyState');
-  el.innerHTML = '<span class="spinner"></span> ' + msg;
+  el.innerHTML = '<span class="spinner"></span> ' + escapeHtml(msg);
   el.hidden = false;
   document.getElementById('tbl').hidden = true;
 }
 
 /* ============================================================
-   Columns setup
+   Progreso del barrido de inventario normal
+   ============================================================ */
+function startProgressPolling() {
+  if (STATE.progressTimer) clearInterval(STATE.progressTimer);
+  STATE.progressTimer = setInterval(async () => {
+    try {
+      const res = await apiCall({ action: 'progress', token: STATE.token });
+      if (res.ok) updateProgressUI(res);
+    } catch (_) {}
+  }, 60000);   // cada minuto
+}
+
+function updateProgressUI(p) {
+  const el = document.getElementById('scanProgress');
+  if (!el || !p || !p.total) { if (el) el.hidden = true; return; }
+
+  const pct = p.pct != null ? p.pct : Math.round((p.cursor / p.total) * 100);
+  el.hidden = false;
+  const done = pct >= 100 || p.cursor === 0;
+
+  el.innerHTML = done
+    ? `<span class="scan-label">✓ Inventario normal completo</span>
+       <div class="scan-bar"><div class="scan-fill done" style="width:100%"></div></div>`
+    : `<span class="scan-label">Barriendo inv. normal · ${p.cursor}/${p.total}</span>
+       <div class="scan-bar"><div class="scan-fill" style="width:${pct}%"></div></div>
+       <span class="scan-pct">${pct}%</span>`;
+}
+
+function updateWfsBadge(mode) {
+  const el = document.getElementById('wfsBadge');
+  if (!el) return;
+  if (mode === 'new') {
+    el.textContent = 'WFS completo';
+    el.className = 'pill ok';
+    el.title = 'Endpoint WFS avanzado activo: incluye forecast, aging y sell-through';
+  } else {
+    el.textContent = 'WFS básico';
+    el.className = 'pill';
+    el.title = 'Endpoint legacy: solo disponible y en-mano. Las columnas de forecast/aging requieren que Walmart habilite Program Eligibility en tu cuenta.';
+  }
+}
+
+/* ============================================================
+   Columnas
    ============================================================ */
 function buildColumns() {
   if (!STATE.rows.length) { STATE.cols = []; return; }
   const keys = Object.keys(STATE.rows[0]);
   STATE.cols = keys.map(k => ({
-    key: k, label: COL_LABELS[k] || k,
+    key: k,
+    label: COL_LABELS[k] || k,
     type: NUM_COLS.has(k) ? 'num' : 'text',
+    locked: LOCKED_COLS.has(k),
   }));
-  if (STATE.visibleCols.size === 0) STATE.cols.forEach(c => STATE.visibleCols.add(c.key));
+
+  if (STATE.visibleCols.size === 0) {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem(STORAGE_COLS) || 'null'); } catch (_) {}
+    const initial = (saved && saved.length) ? saved : DEFAULT_COLS;
+    initial.forEach(k => { if (keys.indexOf(k) >= 0) STATE.visibleCols.add(k); });
+    if (STATE.visibleCols.size === 0) keys.forEach(k => STATE.visibleCols.add(k));
+  }
   renderColsPanel();
 }
 
 function renderColsPanel() {
   const grid = document.getElementById('colsGrid');
   grid.innerHTML = STATE.cols.map(c => `
-    <label>
+    <label ${c.locked ? 'class="locked" title="Requiere que Walmart habilite el endpoint WFS avanzado"' : ''}>
       <input type="checkbox" data-col="${c.key}" ${STATE.visibleCols.has(c.key) ? 'checked' : ''}>
-      ${escapeHtml(c.label)}
+      ${escapeHtml(c.label)}${c.locked ? ' <span class="lock">🔒</span>' : ''}
     </label>`).join('');
   grid.querySelectorAll('input').forEach(inp => {
     inp.onchange = () => {
       const k = inp.dataset.col;
       if (inp.checked) STATE.visibleCols.add(k); else STATE.visibleCols.delete(k);
+      persistCols();
       render();
     };
   });
 }
 
+function persistCols() {
+  try { localStorage.setItem(STORAGE_COLS, JSON.stringify([...STATE.visibleCols])); } catch (_) {}
+}
+
 function toggleAllCols(v) {
   STATE.cols.forEach(c => v ? STATE.visibleCols.add(c.key) : STATE.visibleCols.delete(c.key));
+  persistCols();
+  renderColsPanel();
+  render();
+}
+
+function resetCols() {
+  STATE.visibleCols = new Set(DEFAULT_COLS.filter(k => STATE.cols.some(c => c.key === k)));
+  persistCols();
   renderColsPanel();
   render();
 }
 
 /* ============================================================
-   Filtering + sorting + render
+   Filtros, orden, render
    ============================================================ */
 function filteredRows() {
   const q = document.getElementById('globalSearch').value.toLowerCase().trim();
@@ -227,18 +341,21 @@ function filteredRows() {
     for (const k in STATE.filters) {
       const f = STATE.filters[k];
       if (!f) continue;
-      const v = String(r[k] ?? '').toLowerCase();
-      if (!v.includes(f.toLowerCase())) return false;
+      if (!String(r[k] ?? '').toLowerCase().includes(f.toLowerCase())) return false;
     }
     return true;
   });
+
   if (STATE.sort.key) {
-    const k = STATE.sort.key, dir = STATE.sort.dir;
-    const isNum = NUM_COLS.has(k);
+    const k = STATE.sort.key, dir = STATE.sort.dir, isNum = NUM_COLS.has(k);
     rows.sort((a, b) => {
       const av = a[k], bv = b[k];
-      if (isNum) return (Number(av) - Number(bv)) * dir;
-      return String(av).localeCompare(String(bv)) * dir;
+      if (isNum) {
+        const an = av === '' ? -Infinity : Number(av);
+        const bn = bv === '' ? -Infinity : Number(bv);
+        return (an - bn) * dir;
+      }
+      return String(av).localeCompare(String(bv), 'es') * dir;
     });
   }
   return rows;
@@ -250,8 +367,9 @@ function render() {
   document.getElementById('rowCount').textContent = rows.length + ' / ' + STATE.rows.length + ' SKUs';
 
   if (!STATE.rows.length) {
-    document.getElementById('emptyState').textContent = 'Sin datos. Presiona ↻ Refrescar.';
-    document.getElementById('emptyState').hidden = false;
+    const el = document.getElementById('emptyState');
+    el.textContent = 'Sin datos. Presiona ↻ Refrescar.';
+    el.hidden = false;
     document.getElementById('tbl').hidden = true;
     return;
   }
@@ -271,29 +389,35 @@ function render() {
     };
   });
 
-  document.getElementById('theadFilters').innerHTML = cols.map(c => `
-    <th><input type="text" placeholder="filtrar" data-col="${c.key}" value="${escapeHtml(STATE.filters[c.key] || '')}"></th>
-  `).join('');
+  document.getElementById('theadFilters').innerHTML = cols.map(c =>
+    `<th><input type="text" placeholder="filtrar" data-col="${c.key}" value="${escapeHtml(STATE.filters[c.key] || '')}"></th>`
+  ).join('');
   document.getElementById('theadFilters').querySelectorAll('input').forEach(inp => {
-    inp.oninput = () => {
-      STATE.filters[inp.dataset.col] = inp.value;
-      render();
-    };
+    inp.oninput = () => { STATE.filters[inp.dataset.col] = inp.value; render(); };
   });
 
   const MAX = 500;
   const slice = rows.slice(0, MAX);
   const tbody = document.getElementById('tbody');
-  tbody.innerHTML = slice.map(r => {
-    return '<tr>' + cols.map(c => {
-      const v = r[c.key];
-      let cls = c.type === 'num' ? 'num' : '';
-      if (c.key === 'stockStatus') cls += String(v).toLowerCase().includes('out') ? ' status-out' : ' status-ok';
-      return `<td class="${cls}">${escapeHtml(v)}</td>`;
-    }).join('') + '</tr>';
-  }).join('');
+  tbody.innerHTML = slice.map(r => '<tr>' + cols.map(c => {
+    const v = r[c.key];
+    let cls = c.type === 'num' ? 'num' : '';
+    if (c.key === 'wfsEstado') {
+      cls += String(v).toLowerCase().includes('out') ? ' status-out' : (v ? ' status-ok' : '');
+    }
+    if (c.key === 'esWFS') cls += v === 'SÍ' ? ' status-ok' : ' muted';
+    if (c.key === 'publishedStatus') {
+      cls += String(v).toUpperCase() === 'PUBLISHED' ? ' status-ok' : ' status-out';
+    }
+    if (c.key === 'invNormal' && v === '') {
+      return '<td class="num pending" title="Todavía no barrido">—</td>';
+    }
+    return `<td class="${cls}">${escapeHtml(v)}</td>`;
+  }).join('') + '</tr>').join('');
+
   if (rows.length > MAX) {
-    tbody.innerHTML += `<tr><td colspan="${cols.length}" style="text-align:center;padding:12px;color:var(--muted)">Mostrando ${MAX} de ${rows.length}. Afina los filtros para verlas todas, o exporta.</td></tr>`;
+    tbody.innerHTML += `<tr><td colspan="${cols.length}" class="more-note">
+      Mostrando ${MAX} de ${rows.length}. Afina los filtros o exporta para verlas todas.</td></tr>`;
   }
 }
 
@@ -304,25 +428,26 @@ function clearFilters() {
 }
 
 /* ============================================================
-   Exports (respetan filtros + columnas visibles)
+   Exports — respetan filtros y columnas visibles
    ============================================================ */
-function getExportRows() {
-  const cols = STATE.cols.filter(c => STATE.visibleCols.has(c.key));
-  const rows = filteredRows();
-  return { cols, rows };
+function getExportData() {
+  return {
+    cols: STATE.cols.filter(c => STATE.visibleCols.has(c.key)),
+    rows: filteredRows(),
+  };
 }
 
 function exportXlsx() {
-  const { cols, rows } = getExportRows();
+  const { cols, rows } = getExportData();
   const aoa = [cols.map(c => c.label)].concat(rows.map(r => cols.map(c => r[c.key])));
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Walmart_WFS');
-  XLSX.writeFile(wb, `walmart_wfs_${stamp()}.xlsx`);
+  XLSX.utils.book_append_sheet(wb, ws, 'Inventario');
+  XLSX.writeFile(wb, `wm_inv_${stamp()}.xlsx`);
 }
 
 function exportCsv() {
-  const { cols, rows } = getExportRows();
+  const { cols, rows } = getExportData();
   const esc = v => {
     const s = String(v ?? '');
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -330,20 +455,20 @@ function exportCsv() {
   const csv = [cols.map(c => esc(c.label)).join(',')]
     .concat(rows.map(r => cols.map(c => esc(r[c.key])).join(',')))
     .join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = `walmart_wfs_${stamp()}.csv`;
+  a.href = url; a.download = `wm_inv_${stamp()}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
 }
 
 function exportPdf() {
-  const { cols, rows } = getExportRows();
+  const { cols, rows } = getExportData();
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: cols.length > 6 ? 'landscape' : 'portrait', unit: 'pt', format: 'a4' });
   doc.setFontSize(14);
-  doc.text('Walmart WFS Inventory · Electronics MX', 40, 30);
+  doc.text('Inventario Walmart · Electronics MX', 40, 30);
   doc.setFontSize(9);
   doc.text('Generado: ' + new Date().toLocaleString('es-MX') + ' · ' + rows.length + ' SKUs', 40, 46);
   doc.autoTable({
@@ -355,26 +480,27 @@ function exportPdf() {
     alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { top: 60, bottom: 30, left: 20, right: 20 },
   });
-  doc.save(`walmart_wfs_${stamp()}.pdf`);
+  doc.save(`wm_inv_${stamp()}.pdf`);
 }
 
 /* ============================================================
-   Auto refresh + utils
+   Utils
    ============================================================ */
 function setAutoRefresh(seconds) {
   if (STATE.autoTimer) clearInterval(STATE.autoTimer);
-  if (seconds > 0) STATE.autoTimer = setInterval(() => load(true), seconds * 1000);
+  if (seconds > 0) STATE.autoTimer = setInterval(() => load(false), seconds * 1000);
 }
 
 function stamp() {
-  const d = new Date();
-  const p = n => String(n).padStart(2, '0');
+  const d = new Date(), p = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}`;
 }
+
 function formatTime(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleString('es-MX', { hour12: false });
 }
+
 function escapeHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

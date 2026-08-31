@@ -13,34 +13,31 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; }
+html, body { margin: 0; padding: 0; }
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
   background: var(--bg); color: var(--text); font-size: 13px;
 }
 
-/* ===== Login screen ===== */
+/* ═══════════ Login ═══════════ */
 .login-screen {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #0071dc 0%, #003a75 100%);
-  padding: 20px;
+  background: linear-gradient(135deg, #0071dc 0%, #003a75 100%); padding: 20px;
 }
 .login-card {
-  background: white; padding: 32px 28px; border-radius: 12px; box-shadow: 0 10px 40px rgba(0,0,0,.25);
-  width: 100%; max-width: 380px; text-align: center;
+  background: white; padding: 32px 28px; border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0,0,0,.25); width: 100%; max-width: 380px; text-align: center;
 }
 .login-card .logo { font-size: 48px; margin-bottom: 8px; }
-.login-card h1 { margin: 0 0 4px; font-size: 20px; color: var(--text); }
+.login-card h1 { margin: 0 0 4px; font-size: 20px; }
 .login-card .subtitle { margin: 0 0 24px; color: var(--muted); font-size: 13px; }
 .login-card form { text-align: left; }
 .login-card label { display: block; margin-bottom: 14px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .login-card label span { display: block; margin-bottom: 4px; }
-.login-card input[type=password], .login-card input[type=text] {
+.login-card input[type=password] {
   width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font: inherit;
 }
-.login-card input[type=password]:focus, .login-card input[type=text]:focus {
-  outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent;
-}
+.login-card input[type=password]:focus { outline: 2px solid var(--primary); outline-offset: -1px; border-color: transparent; }
 .login-card label.checkbox { display: flex; align-items: center; gap: 6px; font-weight: normal; color: var(--text); }
 .login-card label.checkbox input { width: auto; margin: 0; }
 .login-card button.primary {
@@ -52,29 +49,51 @@ body {
 .login-card .footnote { margin-top: 20px; font-size: 11px; color: var(--muted); line-height: 1.4; }
 .login-card .msg { margin-top: 12px; padding: 8px 12px; border-radius: 6px; font-size: 12px; display: none; }
 .login-card .msg.error { display: block; background: #fde7e5; color: var(--danger); }
-.login-card .msg.ok { display: block; background: #e6f6ec; color: var(--ok); }
 
-/* ===== Dashboard ===== */
+/* ═══════════ Header ═══════════ */
 header {
   background: linear-gradient(90deg,#0071dc 0%,#004e9c 100%); color: white;
   padding: 12px 20px; display: flex; align-items: center; justify-content: space-between;
   box-shadow: var(--shadow); gap: 16px; flex-wrap: wrap;
 }
 header h1 { margin: 0; font-size: 18px; font-weight: 600; }
-header .meta { font-size: 12px; opacity: .95; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+header .meta { font-size: 12px; opacity: .95; }
+.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pill {
+  background: rgba(255,255,255,.2); color: white;
+  padding: 3px 10px; border-radius: 999px; font-size: 11px; white-space: nowrap;
+}
+.pill.ok { background: rgba(255,255,255,.35); font-weight: 600; }
 
+/* ═══════════ Barra de progreso del barrido ═══════════ */
+.scan-progress {
+  background: #eef4fb; border-bottom: 1px solid var(--border);
+  padding: 7px 20px; display: flex; align-items: center; gap: 12px; font-size: 12px;
+}
+.scan-label { color: var(--muted); white-space: nowrap; }
+.scan-bar {
+  flex: 1; height: 6px; background: #d8e3f0; border-radius: 999px;
+  overflow: hidden; max-width: 420px;
+}
+.scan-fill {
+  height: 100%; background: var(--primary); border-radius: 999px;
+  transition: width .4s ease;
+}
+.scan-fill.done { background: var(--ok); }
+.scan-pct { color: var(--primary); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ═══════════ Toolbar ═══════════ */
 main { padding: 16px 20px; }
-
 .toolbar {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
   padding: 12px; margin-bottom: 12px; box-shadow: var(--shadow);
 }
 .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.row + .row { margin-top: 10px; }
 .spacer { flex: 1; }
 .auto-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.hint { font-size: 11px; color: var(--muted); }
 
-input[type=text], input[type=password], select {
+input[type=text], select {
   padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font: inherit; background: white;
 }
 input[type=text]:focus, select:focus { outline: 2px solid var(--primary); outline-offset: -1px; }
@@ -95,24 +114,26 @@ button.btn-ghost {
 button.btn-ghost:hover { background: rgba(255,255,255,.25); color: white; }
 button.btn-mini { padding: 3px 10px; font-size: 11px; }
 
-.pill { background: rgba(255,255,255,.2); color: white; padding: 3px 10px; border-radius: 999px; font-size: 11px; }
-
+/* ═══════════ Panel de columnas ═══════════ */
 .cols-panel {
   background: white; border: 1px solid var(--border); border-radius: 8px;
   padding: 12px; margin-bottom: 12px; box-shadow: var(--shadow);
-  max-height: 240px; overflow-y: auto;
+  max-height: 260px; overflow-y: auto;
 }
-.cols-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 12px; }
-.cols-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 6px; }
+.cols-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; flex-wrap: wrap; }
+.cols-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
 .cols-grid label {
-  font-size: 12px; display: flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 3px 6px; border-radius: 4px;
+  font-size: 12px; display: flex; align-items: center; gap: 6px;
+  cursor: pointer; padding: 3px 6px; border-radius: 4px;
 }
 .cols-grid label:hover { background: #f5f7fa; }
+.cols-grid label.locked { color: var(--muted); }
+.cols-grid .lock { font-size: 10px; opacity: .6; }
 
+/* ═══════════ Tabla ═══════════ */
 .table-wrap {
   background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
-  overflow: auto; box-shadow: var(--shadow); max-height: calc(100vh - 260px);
+  overflow: auto; box-shadow: var(--shadow); max-height: calc(100vh - 280px);
 }
 table { border-collapse: collapse; width: 100%; font-size: 12px; }
 thead th {
@@ -122,17 +143,19 @@ thead th {
 thead th.sortable { cursor: pointer; }
 thead th.sortable:hover { background: #eef2f7; }
 thead th .sort-ind { color: var(--primary); margin-left: 4px; font-size: 11px; }
-thead .filter-row th {
-  position: sticky; top: 34px; background: white; padding: 4px 6px; z-index: 1;
-}
+thead .filter-row th { position: sticky; top: 34px; background: white; padding: 4px 6px; z-index: 1; }
 thead .filter-row input {
-  width: 100%; font-size: 11px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 4px;
+  width: 100%; font-size: 11px; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 4px;
 }
 tbody td { padding: 6px 10px; border-bottom: 1px solid #eef2f7; white-space: nowrap; }
 tbody tr:hover { background: #f9fbfd; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 td.status-ok  { color: var(--ok); font-weight: 600; }
 td.status-out { color: var(--danger); font-weight: 600; }
+td.muted { color: var(--muted); }
+td.pending { color: #c3cad3; text-align: center; }
+td.more-note { text-align: center; padding: 12px; color: var(--muted); }
 
 .empty { padding: 40px; text-align: center; color: var(--muted); }
 .spinner {
@@ -147,4 +170,5 @@ td.status-out { color: var(--danger); font-weight: 600; }
   header { flex-direction: column; align-items: flex-start; }
   main { padding: 12px; }
   #globalSearch { max-width: 100%; }
+  .scan-progress { flex-wrap: wrap; }
 }
