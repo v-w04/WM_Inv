@@ -1,0 +1,29 @@
+# Apps Script clasp config (contiene scriptId — no es secreto pero mejor no publicarlo)
+apps-script/.clasp.json
+.clasp.json
+
+# Node / clasp
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editores
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Backups locales
+*.bak
+*.tmp
+*~
+
+# Env / credenciales (nunca deben existir aquí, pero por si acaso)
+.env
+.env.local
+*.credentials.json
