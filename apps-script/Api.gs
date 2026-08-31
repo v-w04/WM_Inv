@@ -257,32 +257,100 @@ function fetchWfsNew_() {
 }
 
 /* ==============================================================
-   CATÁLOGO — /v3/items  (3,271 items ≈ 66 páginas ≈ 85 seg)
+   CATÁLOGO — /v3/items  (~3,271 items)
+
+   Walmart MX no regresa `nextCursor` en la respuesta, así que
+   detectamos el modo de paginación en la primera página:
+     · Si aparece algún campo tipo cursor → modo cursor
+     · Si no → modo offset (requiere includeDetails=true)
+
+   Protecciones contra ciclo infinito:
+     · Dedupe por SKU
+     · Si una página no aporta SKUs nuevos, corta
+     · Tope de páginas y presupuesto de tiempo
    ============================================================== */
 function getAllItems(deadlineMs) {
   const out = [];
-  let nextCursor = null, pages = 0;
+  const seen = {};
+  const limit = 50;
   const maxPages = 400;
+
+  let pages = 0;
+  let mode = null;          // 'cursor' | 'offset'
+  let cursorField = null;
+  let cursor = null;
+  let offset = 0;
+  let total = null;
 
   while (pages++ < maxPages) {
     if (deadlineMs && Date.now() > deadlineMs) {
-      Logger.log('  ⏱ Catálogo cortado por tiempo en página ' + pages);
+      Logger.log('  ⏱ Catálogo cortado por tiempo en la página ' + pages +
+                 ' (' + out.length + ' items). Sube BUDGET_MAIN_MS si pasa seguido.');
       break;
     }
-    const params = { limit: 50 };
-    if (nextCursor) params.nextCursor = nextCursor;
+
+    const params = { limit: limit, includeDetails: 'true' };
+    if (mode === 'cursor' && cursor) params[cursorField] = cursor;
+    if (mode === 'offset') params.offset = offset;
 
     const data = wmGet_('/v3/items', params);
     const items = data.ItemResponse || data.items || [];
-    items.forEach(function(it){ out.push(normalizeItem_(it)); });
 
-    nextCursor = data.nextCursor;
-    if (!nextCursor || !items.length) break;
+    if (total === null) {
+      const t = Number(data.totalItems || data.totalCount || 0);
+      total = t > 0 ? t : null;
+    }
+
+    // Decidir el modo con la primera respuesta
+    if (mode === null) {
+      cursorField = findCursorField_(data);
+      mode = cursorField ? 'cursor' : 'offset';
+      Logger.log('  Paginación: modo ' + mode +
+                 (cursorField ? ' (campo "' + cursorField + '")' : '') +
+                 (total ? ' · total ' + total : ''));
+    }
+
+    let nuevos = 0;
+    items.forEach(function(it){
+      const sku = it && it.sku;
+      if (sku && !seen[sku]) {
+        seen[sku] = 1;
+        out.push(normalizeItem_(it));
+        nuevos++;
+      }
+    });
+
+    if (!items.length) break;
+    if (nuevos === 0) {
+      Logger.log('  ⚠ La página ' + pages + ' no trajo SKUs nuevos — se corta ' +
+                 'para no ciclar. Total: ' + out.length);
+      break;
+    }
+    if (total && out.length >= total) break;
+
+    if (mode === 'cursor') {
+      cursor = data[cursorField];
+      if (!cursor) break;
+    } else {
+      offset += items.length;
+    }
+
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
 
-  Logger.log('  Catálogo: ' + out.length + ' items');
+  const faltan = total ? (total - out.length) : 0;
+  Logger.log('  Catálogo: ' + out.length + ' items' +
+             (faltan > 0 ? '  ⚠ faltaron ' + faltan + ' de ' + total : ' ✓'));
   return out;
+}
+
+/** Busca cómo se llama el campo de cursor en la respuesta */
+function findCursorField_(data) {
+  const candidatos = ['nextCursor', 'nextCursorValue', 'cursor', 'nextPageToken', 'nextPage'];
+  for (let i = 0; i < candidatos.length; i++) {
+    if (data[candidatos[i]]) return candidatos[i];
+  }
+  return null;
 }
 
 function normalizeItem_(it) {

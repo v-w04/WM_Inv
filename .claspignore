@@ -1,0 +1,8 @@
+# Archivos que NO se suben a Apps Script
+# (clasp solo debe subir los .gs y el appsscript.json)
+
+**/*.md
+**/.clasp.json
+**/.claspignore
+**/*.bat
+**/*.txt

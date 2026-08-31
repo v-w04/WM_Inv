@@ -213,3 +213,101 @@ function pad_(s, n) {
   while (s.length < n) s += ' ';
   return s;
 }
+
+/* ============================================================
+   DIAGNÓSTICO DE PAGINACIÓN DEL CATÁLOGO
+   Corre esta función si el catálogo se queda en 50 items.
+   ============================================================ */
+function diagnosticarPaginacion() {
+  Logger.log('══════════════════════════════════════════════════');
+  Logger.log(' PAGINACIÓN DE /v3/items');
+  Logger.log('══════════════════════════════════════════════════');
+  Logger.log('');
+
+  /* --- 1. ¿Qué llaves trae la respuesta? --- */
+  Logger.log('── 1. Llaves de la respuesta ──');
+  const r1 = probe_('/v3/items', { limit: 50 });
+  if (!r1.ok) {
+    Logger.log('❌ HTTP ' + r1.code + ': ' + truncate_(r1.body, 300));
+    return;
+  }
+  const keys1 = Object.keys(r1.data);
+  Logger.log('   Llaves: ' + keys1.join(', '));
+  keys1.forEach(function(k){
+    const v = r1.data[k];
+    if (Array.isArray(v))       Logger.log('     · ' + k + ' → array de ' + v.length);
+    else if (v && typeof v === 'object') Logger.log('     · ' + k + ' → objeto {' + Object.keys(v).join(',') + '}');
+    else                        Logger.log('     · ' + k + ' → ' + truncate_(String(v), 80));
+  });
+  const items1 = r1.data.ItemResponse || r1.data.items || [];
+  Logger.log('   Items recibidos: ' + items1.length);
+  Logger.log('   Primer SKU: ' + (items1[0] ? items1[0].sku : '—'));
+  Logger.log('   Último SKU: ' + (items1.length ? items1[items1.length-1].sku : '—'));
+  Logger.log('');
+
+  /* --- 2. ¿Existe algún campo de cursor? --- */
+  Logger.log('── 2. Campo de cursor ──');
+  const cursorField = findCursorField_(r1.data);
+  if (cursorField) {
+    Logger.log('   ✅ Encontrado: "' + cursorField + '" = ' + truncate_(String(r1.data[cursorField]), 80));
+  } else {
+    Logger.log('   ❌ No hay campo de cursor. Hay que paginar con offset.');
+  }
+  Logger.log('');
+
+  /* --- 3. ¿Funciona offset? --- */
+  Logger.log('── 3. Prueba de offset (includeDetails=true) ──');
+  const rA = probe_('/v3/items', { limit: 50, offset: 0,  includeDetails: 'true' });
+  Utilities.sleep(400);
+  const rB = probe_('/v3/items', { limit: 50, offset: 50, includeDetails: 'true' });
+
+  if (!rA.ok || !rB.ok) {
+    Logger.log('   ❌ offset=0 → HTTP ' + rA.code + ' | offset=50 → HTTP ' + rB.code);
+    if (!rB.ok) Logger.log('      ' + truncate_(rB.body, 300));
+  } else {
+    const iA = rA.data.ItemResponse || [];
+    const iB = rB.data.ItemResponse || [];
+    const skuA = iA.length ? iA[0].sku : '';
+    const skuB = iB.length ? iB[0].sku : '';
+    Logger.log('   offset=0  → ' + iA.length + ' items · primero: ' + skuA);
+    Logger.log('   offset=50 → ' + iB.length + ' items · primero: ' + skuB);
+    if (skuA && skuB && skuA !== skuB) {
+      Logger.log('   ✅ OFFSET SÍ FUNCIONA (los SKUs son distintos)');
+    } else if (skuA === skuB) {
+      Logger.log('   ❌ offset ignorado — devuelve los mismos items');
+    }
+  }
+  Logger.log('');
+
+  /* --- 4. Offset sin includeDetails --- */
+  Logger.log('── 4. Prueba de offset SIN includeDetails ──');
+  const rC = probe_('/v3/items', { limit: 50, offset: 50 });
+  if (rC.ok) {
+    const iC = rC.data.ItemResponse || [];
+    const skuC = iC.length ? iC[0].sku : '';
+    const skuA2 = (rA.ok && rA.data.ItemResponse && rA.data.ItemResponse[0]) ? rA.data.ItemResponse[0].sku : '';
+    Logger.log('   offset=50 sin includeDetails → primero: ' + skuC);
+    Logger.log('   ' + (skuC && skuC !== skuA2 ? '✅ También funciona' : '❌ No avanza'));
+  } else {
+    Logger.log('   ❌ HTTP ' + rC.code);
+  }
+  Logger.log('');
+
+  /* --- Veredicto --- */
+  Logger.log('══════════════════════════════════════════════════');
+  Logger.log(' VEREDICTO');
+  Logger.log('══════════════════════════════════════════════════');
+  if (cursorField) {
+    Logger.log(' → Usar modo CURSOR con el campo "' + cursorField + '"');
+  } else if (rA.ok && rB.ok) {
+    const sA = (rA.data.ItemResponse && rA.data.ItemResponse[0]) ? rA.data.ItemResponse[0].sku : '';
+    const sB = (rB.data.ItemResponse && rB.data.ItemResponse[0]) ? rB.data.ItemResponse[0].sku : '';
+    Logger.log(sA !== sB
+      ? ' → Usar modo OFFSET (ya está implementado en Api.gs) ✅'
+      : ' → ⚠ Ninguno de los dos modos avanza. Pásame este log completo.');
+  } else {
+    Logger.log(' → ⚠ Las pruebas de offset fallaron. Pásame este log completo.');
+  }
+  Logger.log('');
+  Logger.log('👉 Copia TODO este log y pásamelo.');
+}
