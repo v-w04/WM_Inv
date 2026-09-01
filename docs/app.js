@@ -29,7 +29,8 @@ const NUM_COLS = new Set([
 ]);
 
 const COL_LABELS = {
-  sku: 'SKU', productName: 'Producto', productType: 'Tipo', shelf: 'Categoría',
+  sku: 'SKU', productName: 'Producto', productType: 'Tipo',
+  shelf: 'Categoría', shelfCompleto: 'Ruta completa',
   wpid: 'WPID', upc: 'UPC', gtin: 'GTIN', mart: 'Mart',
   price: 'Precio', currency: 'Moneda',
   publishedStatus: 'Publicación', lifecycleStatus: 'Ciclo de vida',
@@ -48,10 +49,22 @@ const COL_LABELS = {
   invNormal: 'Inv. Normal', invUnidad: 'Unidad', invRevisado: 'Inv. revisado',
 };
 
+/* Mismas columnas y mismo orden que la hoja Inventario */
 const DEFAULT_COLS = [
-  'sku', 'productName', 'productType', 'price', 'publishedStatus',
-  'esWFS', 'wfsDisponible', 'wfsEnMano', 'wfsEstado', 'invNormal',
+  'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
+  'publishedStatus', 'esWFS', 'wfsDisponible',
 ];
+
+/* Ancho máximo por columna, en px. Lo que no cabe se corta con "…"
+   y el texto completo aparece al pasar el cursor. */
+const COL_WIDTH = {
+  sku: 190, shelf: 150, upc: 120, gtin: 120,
+  price: 90, currency: 70, publishedStatus: 130,
+  esWFS: 70, wfsDisponible: 100, wfsEnMano: 100,
+  productName: 300, shelfCompleto: 260, productType: 160,
+  unpublishedReasons: 220, offerId: 200, wpid: 120,
+};
+const COL_WIDTH_DEFAULT = 130;
 
 /* Columnas que solo se llenan con el endpoint WFS avanzado */
 const LOCKED_COLS = new Set([
@@ -473,8 +486,9 @@ function render() {
 
   document.getElementById('theadCols').innerHTML = cols.map(c => {
     const arrow = STATE.sort.key === c.key ? (STATE.sort.dir === 1 ? '▲' : '▼') : '';
-    return '<th class="sortable" data-col="' + c.key + '">' + escapeHtml(c.label) +
-           ' <span class="sort-ind">' + arrow + '</span></th>';
+    const w = COL_WIDTH[c.key] || COL_WIDTH_DEFAULT;
+    return '<th class="sortable" data-col="' + c.key + '" style="width:' + w + 'px;min-width:' + w + 'px">' +
+           escapeHtml(c.label) + ' <span class="sort-ind">' + arrow + '</span></th>';
   }).join('');
   document.getElementById('theadCols').querySelectorAll('th').forEach(th => {
     th.onclick = () => {
@@ -500,7 +514,7 @@ function render() {
       const v = r[c.key];
       let cls = c.type === 'num' ? 'num' : '';
 
-      if (c.key === 'sku') cls += ' mono';
+      if (c.key === 'sku' || c.key === 'upc' || c.key === 'gtin') cls += ' mono';
       if (c.key === 'publishedStatus') {
         const s = String(v).toUpperCase();
         cls += s === 'PUBLISHED' ? ' state-ok' : (s === 'SYSTEM_PROBLEM' ? ' state-warn' : ' state-danger');
@@ -512,7 +526,10 @@ function render() {
       if (c.key === 'invNormal' && v === '') {
         return '<td class="pending" title="Aún no barrido">—</td>';
       }
-      return '<td class="' + cls + '">' + escapeHtml(v) + '</td>';
+      const w = COL_WIDTH[c.key] || COL_WIDTH_DEFAULT;
+      const txt = escapeHtml(v);
+      // title = texto completo al pasar el cursor, porque la celda se corta
+      return '<td class="' + cls + '" style="max-width:' + w + 'px" title="' + txt + '">' + txt + '</td>';
     }).join('') + '</tr>'
   ).join('');
 

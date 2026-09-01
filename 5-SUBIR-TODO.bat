@@ -10,6 +10,36 @@ echo    Apps Script  +  GitHub
 echo  =======================================================
 echo.
 
+REM ================= SEGURO ANTI-CREDENCIALES =================
+echo  Revisando que no haya credenciales en el codigo...
+set FUGA=0
+findstr /C:"PON_TU_CLIENT_ID_AQUI" apps-script\Auth.gs >nul 2>&1
+if errorlevel 1 set FUGA=1
+findstr /C:"PON_TU_CLIENT_SECRET_AQUI" apps-script\Auth.gs >nul 2>&1
+if errorlevel 1 set FUGA=1
+findstr /C:"PON_TU_PASSWORD_AQUI" apps-script\Auth.gs >nul 2>&1
+if errorlevel 1 set FUGA=1
+
+if "!FUGA!"=="1" (
+    echo.
+    echo  =======================================================
+    echo    DETENIDO - POSIBLE CREDENCIAL EN Auth.gs
+    echo  =======================================================
+    echo.
+    echo  Un placeholder fue reemplazado. Si ahi quedo una
+    echo  credencial real y la subes, queda en el historial
+    echo  publico de git PARA SIEMPRE.
+    echo.
+    echo  Regresa los valores a sus placeholders en Auth.gs
+    echo  y vuelve a correr esto. Tus credenciales ya estan
+    echo  en PropertiesService, no hacen falta en el codigo.
+    echo.
+    pause
+    exit /b 1
+)
+echo  Limpio.
+echo.
+
 REM ================= PARTE 1: APPS SCRIPT =================
 echo  ###  PARTE 1 de 2 - APPS SCRIPT  ###
 echo.

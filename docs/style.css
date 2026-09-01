@@ -142,9 +142,21 @@
 
 .table-wrap { max-height: calc(100vh - 340px); }
 
+/* Ancho fijo por columna: sin esto un nombre de producto largo empuja
+   todo lo demás fuera de la pantalla. Lo que no cabe se corta con "…"
+   y el texto completo sale en el tooltip. */
+table.data { table-layout: fixed; width: max-content; min-width: 100%; }
+
 table.data thead th.sortable { cursor: pointer; }
 table.data thead th.sortable:hover { background: var(--surface-hover); }
 table.data thead th .sort-ind { color: var(--brand-link); margin-left: var(--space-1); }
+
+table.data thead th,
+table.data tbody td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 table.data thead tr:nth-child(2) th {
   top: 33px;

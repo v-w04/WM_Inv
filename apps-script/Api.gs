@@ -355,14 +355,16 @@ function findCursorField_(data) {
 
 function normalizeItem_(it) {
   const price = it.price || {};
+  const ruta  = rutaShelf_(it.shelf);
   return {
     sku:             it.sku || '',
     productName:     it.productName || '',
     productType:     it.productType || '',
-    shelf:           parseShelf_(it.shelf),
+    shelf:           categoriaDeShelf_(ruta, it.productType),  // solo el departamento
+    shelfCompleto:   ruta.join(' > '),                          // ruta entera, por si se necesita
     wpid:            it.wpid || '',
-    upc:             it.upc || '',
-    gtin:            it.gtin || '',
+    upc:             pad14_(it.upc),
+    gtin:            pad14_(it.gtin),
     mart:            it.mart || '',
     price:           price.amount != null ? price.amount : '',
     currency:        price.currency || '',
@@ -374,16 +376,59 @@ function normalizeItem_(it) {
   };
 }
 
-/** shelf viene como string JSON: "[\"Home Page\",\"Computadoras\",...]" */
-function parseShelf_(shelf) {
-  if (!shelf) return '';
-  if (Array.isArray(shelf)) return shelf.join(' > ');
+/**
+ * UPC y GTIN a 14 dígitos con ceros a la izquierda.
+ * Walmart los manda sin rellenar y Sheets se come los ceros si los trata
+ * como número — por eso van como texto y la columna se formatea como '@'.
+ */
+function pad14_(v) {
+  if (v === null || v === undefined || v === '') return '';
+  const s = String(v).replace(/\D/g, '');
+  if (!s) return '';
+  return s.length >= 14 ? s : ('00000000000000' + s).slice(-14);
+}
+
+/** shelf llega como string JSON: "[\"Home Page\",\"Computadoras\",...]" */
+function rutaShelf_(shelf) {
+  if (!shelf) return [];
+  if (Array.isArray(shelf)) return shelf;
   try {
     const arr = JSON.parse(shelf);
-    return Array.isArray(arr) ? arr.join(' > ') : String(shelf);
+    return Array.isArray(arr) ? arr : [String(shelf)];
   } catch (e) {
-    return String(shelf);
+    return String(shelf).split('>').map(function(s){ return s.trim(); });
   }
+}
+
+/**
+ * Saca el departamento de la ruta del shelf.
+ *
+ * La ruta viene así:
+ *   [0] Home Page / Root      ← raíz, siempre igual
+ *   [1] Videojuegos y Juguetes ← macro-categoría
+ *   [2] Videojuegos            ← DEPARTAMENTO (esto queremos)
+ *   [3] PlayStation 5
+ *   [4] Consolas PS5
+ *
+ * Ejemplos:
+ *   Home Page > Computadoras, Papelería y Oficina > Computadoras > Laptops  → "Computadoras"
+ *   Root > Pantallas y Audio > Audio > Audífonos > In Ear                   → "Audio"
+ *   Home Page > Hogar y Ferretería > Cocina y Hogar > Artículos de Cocina   → "Cocina y Hogar"
+ *
+ * Si la ruta es más corta, cae al último nivel disponible; si no hay ruta,
+ * usa el productType que sí trae Walmart.
+ */
+function categoriaDeShelf_(ruta, productType) {
+  if (!ruta || !ruta.length) return productType || '';
+
+  // Quita la raíz si viene
+  let r = ruta.slice();
+  const raiz = String(r[0] || '').toLowerCase();
+  if (raiz === 'home page' || raiz === 'root') r = r.slice(1);
+
+  if (r.length >= 2) return String(r[1]).trim();   // el departamento
+  if (r.length === 1) return String(r[0]).trim();
+  return productType || '';
 }
 
 /* ==============================================================

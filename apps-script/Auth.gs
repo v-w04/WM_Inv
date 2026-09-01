@@ -6,9 +6,18 @@
 
 /* ================ CREDENCIALES WALMART ================ */
 
+/**
+ * ⚠️ ESTE ARCHIVO SE SUBE A UN REPO PÚBLICO.
+ *
+ * Edita los valores, corre la función UNA vez, y REGRESA LOS PLACEHOLDERS.
+ * Las credenciales quedan cifradas en PropertiesService — el código no las
+ * necesita después.
+ *
+ * Si subes una credencial real, queda en el historial de git para siempre;
+ * borrarla en un commit posterior NO la quita. Los .bat de subida traen un
+ * seguro que revisa esto, pero la primera línea de defensa eres tú.
+ */
 function setupCredentialsInline() {
-  // ⚠️ Edita estos valores UNA sola vez, corre esta función, y luego
-  //    déjalos como estaban (placeholders). Ya quedan cifrados en PropertiesService.
   const CLIENT_ID     = 'PON_TU_CLIENT_ID_AQUI';
   const CLIENT_SECRET = 'PON_TU_CLIENT_SECRET_AQUI';
   if (CLIENT_ID.startsWith('PON_') || CLIENT_SECRET.startsWith('PON_')) {

@@ -40,12 +40,15 @@ function syncMain() {
     // Merge: una fila por SKU del catálogo, con datos de WFS si aplica
     const rows = items.map(function(it){
       const w = wfsBySku[it.sku] || {};
+      const enWfs = !!w.sku;
       return Object.assign({}, it, {
-        esWFS:            w.sku ? 'SÍ' : 'NO',
+        esWFS:            enWfs ? 'SÍ' : 'NO',
         offerId:          w.offerId || '',
-        wfsDisponible:    w.wfsAvailToSell != null ? w.wfsAvailToSell : '',
-        wfsEnMano:        w.wfsOnHand != null ? w.wfsOnHand : '',
-        wfsReservado:     w.wfsReserved != null ? w.wfsReserved : '',
+        // Sin WFS = 0 real, no celda vacía. Un hueco se lee como "no sé";
+        // aquí sí sabemos: no está en WFS, así que no hay stock ahí.
+        wfsDisponible:    enWfs ? (w.wfsAvailToSell != null ? w.wfsAvailToSell : 0) : 0,
+        wfsEnMano:        enWfs ? (w.wfsOnHand != null ? w.wfsOnHand : 0) : 0,
+        wfsReservado:     enWfs ? (w.wfsReserved != null ? w.wfsReserved : 0) : 0,
         wfsInbound:       w.wfsInbound != null ? w.wfsInbound : '',
         wfsEstado:        w.wfsStockStatus || '',
         wfsTipoNodo:      w.wfsShipNodeType || '',
@@ -219,17 +222,27 @@ function reiniciarBarrido() {
 /* ============================================================
    Escritura de hojas
    ============================================================ */
+/**
+ * Orden de columnas en la hoja Inventario.
+ * Las primeras 9 son las que se usan a diario — mismo orden que en el dashboard.
+ */
 const MASTER_COLS = [
-  'sku', 'productName', 'productType', 'shelf',
-  'wpid', 'upc', 'gtin', 'mart',
-  'price', 'currency', 'publishedStatus', 'lifecycleStatus', 'unpublishedReasons',
-  'esWFS', 'offerId',
-  'wfsDisponible', 'wfsEnMano', 'wfsReservado', 'wfsInbound',
+  // ── Las de uso diario ──
+  'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
+  'publishedStatus', 'esWFS', 'wfsDisponible',
+  // ── Resto del catálogo ──
+  'productName', 'productType', 'shelfCompleto', 'wpid', 'mart',
+  'lifecycleStatus', 'unpublishedReasons', 'offerId',
+  // ── Resto de WFS ──
+  'wfsEnMano', 'wfsReservado', 'wfsInbound',
   'wfsEstado', 'wfsTipoNodo', 'wfsActualizado', 'wfsPrimerStock',
   'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270', 'wfsEdad271_365', 'wfsEdad365plus',
   'wfsProyS1_4', 'wfsProyS5_8', 'wfsProyS9_12',
   'wfsSellThrough', 'wfsDiasSupply', 'wfsFechaOOS', 'wfsSugeridas', 'wfsExcedente',
 ];
+
+/** Columnas que Sheets debe tratar como TEXTO (si no, se come los ceros iniciales) */
+const COLS_TEXTO = ['upc', 'gtin', 'sku'];
 
 function writeMasterSheet_(rows) {
   if (!rows || !rows.length) return;
@@ -241,8 +254,17 @@ function writeMasterSheet_(rows) {
 
   sh.clearContents();
   SpreadsheetApp.flush();
+
+  // Formato TEXTO en upc/gtin/sku ANTES de escribir, para que Sheets
+  // no convierta "00063790259141" a 63790259141
+  COLS_TEXTO.forEach(function(col){
+    const i = MASTER_COLS.indexOf(col);
+    if (i >= 0) sh.getRange(1, i + 1, Math.max(values.length, 2), 1).setNumberFormat('@');
+  });
+
   sh.getRange(1, 1, values.length, MASTER_COLS.length).setValues(values);
   sh.setFrozenRows(1);
+  sh.setFrozenColumns(1);
   sh.getRange(1, 1, 1, MASTER_COLS.length)
     .setFontWeight('bold').setBackground('#0071dc').setFontColor('#ffffff');
   SpreadsheetApp.flush();
