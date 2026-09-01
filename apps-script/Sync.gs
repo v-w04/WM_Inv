@@ -69,8 +69,14 @@ function syncMain() {
     });
 
     writeMasterSheet_(rows);
-    ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
-    resetInvCursor_();
+    // Solo reinicia el barrido si la lista de SKUs cambió de tamaño
+    // (si no, el cursor sigue siendo válido y no tiramos el avance).
+    const cambioLista = ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
+    if (cambioLista) {
+      resetInvCursor_();
+      Logger.log('  ℹ La lista de SKUs cambió — barrido reiniciado.');
+    }
+    PropertiesService.getScriptProperties().setProperty(WM_CONFIG.PROP_LAST_MAIN, String(Date.now()));
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -88,6 +94,18 @@ function syncMain() {
    2. BARRIDO POR PARTES — inventario normal (1 llamada por SKU)
    ============================================================ */
 function syncRegularChunk() {
+  // ── Cede el turno si syncMain lleva rato sin poder correr ──
+  // Sin esto, el barrido acapara el lock 4 de cada 5 minutos y syncMain
+  // se queda sin ejecutar (medido: pasó de 10 min a 123 min entre corridas).
+  const lastMain = Number(PropertiesService.getScriptProperties()
+                      .getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+  const minsSinMain = lastMain ? (Date.now() - lastMain) / 60000 : 999;
+  if (minsSinMain > WM_CONFIG.REFRESH_INTERVAL_MIN - 1) {
+    Logger.log('⏭ Cediendo el turno a syncMain (lleva ' +
+               minsSinMain.toFixed(0) + ' min sin correr).');
+    return { skipped: true, reason: 'cede a syncMain' };
+  }
+
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
     Logger.log('⏭ syncRegularChunk: otra corrida en curso, se salta.');
@@ -116,20 +134,40 @@ function syncRegularChunk() {
     Logger.log('▶ Barrido inv. normal desde ' + cursor + ' / ' + totalSkus);
 
     const results = [];
-    let i = 0;
     let errores = 0;
+    let fallosSeguidos = 0;
+    let throttled = false;
 
-    for (i = 0; i < skus.length; i++) {
+    for (let i = 0; i < skus.length; i++) {
       if (Date.now() > deadline) break;
 
       const sku = String(skus[i][0] || '').trim();
       if (!sku) { results.push(['', '', '', '']); continue; }
 
       const inv = getInventoryForSku(sku);
-      if (!inv.ok) errores++;
-      results.push([sku, inv.qty, inv.unit, new Date()]);
 
-      Utilities.sleep(WM_CONFIG.SKU_PACING_MS);
+      if (inv.ok) {
+        fallosSeguidos = 0;
+        results.push([sku, inv.qty, inv.unit, new Date()]);
+      } else {
+        errores++;
+        fallosSeguidos++;
+        // Deja la celda intacta para que el siguiente ciclo lo reintente
+        results.push([sku, '', '', '']);
+
+        if (inv.throttled) throttled = true;
+
+        // Circuit breaker: si Walmart nos está frenando, no tiene caso
+        // seguir quemando el presupuesto. Guardamos el avance y salimos.
+        if (fallosSeguidos >= 8) {
+          Logger.log('  ⚠ ' + fallosSeguidos + ' fallos seguidos' +
+                     (throttled ? ' (HTTP 429 — throttling)' : '') +
+                     ' — se corta la corrida y se guarda el avance.');
+          break;
+        }
+      }
+
+      Utilities.sleep(throttled ? WM_CONFIG.SKU_PACING_MS * 4 : WM_CONFIG.SKU_PACING_MS);
     }
 
     // Escribe el bloque procesado
@@ -214,6 +252,11 @@ function writeMasterSheet_(rows) {
  * Prepara la hoja de inventario normal con la misma lista y orden de SKUs
  * que el master. Conserva las cantidades ya obtenidas de los SKUs que siguen existiendo.
  */
+/**
+ * Prepara la hoja de inventario normal con la lista de SKUs del master.
+ * Conserva las cantidades ya obtenidas.
+ * @return {boolean} true si la lista de SKUs cambió (hay que reiniciar el cursor)
+ */
 function ensureRegularSheet_(skus) {
   const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
   const headers = ['sku', 'cantidad', 'unidad', 'revisadoEn'];
@@ -221,11 +264,15 @@ function ensureRegularSheet_(skus) {
   // Conserva lo ya barrido
   const previo = {};
   const lastRow = sh.getLastRow();
+  const totalPrevio = Math.max(0, lastRow - 1);
+  let mismoOrden = (totalPrevio === skus.length);
+
   if (lastRow > 1) {
     const old = sh.getRange(2, 1, lastRow - 1, 4).getValues();
-    old.forEach(function(r){
+    old.forEach(function(r, idx){
       const s = String(r[0] || '').trim();
       if (s) previo[s] = [r[1], r[2], r[3]];
+      if (mismoOrden && s !== skus[idx]) mismoOrden = false;
     });
   }
 
@@ -241,6 +288,8 @@ function ensureRegularSheet_(skus) {
   sh.getRange(1, 1, 1, 4)
     .setFontWeight('bold').setBackground('#0a8f3f').setFontColor('#ffffff');
   SpreadsheetApp.flush();
+
+  return !mismoOrden;   // true = la lista cambió → reiniciar cursor
 }
 
 /* ============================================================

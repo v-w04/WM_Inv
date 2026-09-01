@@ -389,17 +389,49 @@ function parseShelf_(shelf) {
 /* ==============================================================
    INVENTARIO NORMAL — /v3/inventory?sku=X  (uno por uno)
    ============================================================== */
+/**
+ * Consulta el inventario de UN SKU.
+ *
+ * A diferencia del resto, aquí NO usamos reintentos agresivos: son miles
+ * de llamadas y un SKU problemático con 4 intentos + backoff se come el
+ * presupuesto entero de la corrida (medido: hasta 96 seg en un solo SKU).
+ * Un SKU que falla se marca y se reintenta en el siguiente ciclo.
+ */
 function getInventoryForSku(sku) {
+  const url = getBaseUrl() + '/v3/inventory' + toQs_({ sku: sku });
   try {
-    const data = wmGet_('/v3/inventory', { sku: sku });
-    const q = (data && data.quantity) || {};
-    return {
-      ok: true,
-      qty:  num_(q.amount),
-      unit: q.unit || 'EACH',
-    };
+    const resp = UrlFetchApp.fetch(url, {
+      method: 'get',
+      headers: wmHeaders_(),
+      muteHttpExceptions: true,
+    });
+    const code = resp.getResponseCode();
+
+    if (code >= 200 && code < 300) {
+      const data = JSON.parse(resp.getContentText() || '{}');
+      const q = (data && data.quantity) || {};
+      return { ok: true, qty: num_(q.amount), unit: q.unit || 'EACH' };
+    }
+
+    // 401: el token venció. Lo refrescamos y damos UN solo reintento.
+    if (code === 401) {
+      CacheService.getScriptCache().remove(WM_CONFIG.CACHE_TOKEN);
+      const r2 = UrlFetchApp.fetch(url, {
+        method: 'get', headers: wmHeaders_(), muteHttpExceptions: true,
+      });
+      if (r2.getResponseCode() < 300) {
+        const d2 = JSON.parse(r2.getContentText() || '{}');
+        const q2 = (d2 && d2.quantity) || {};
+        return { ok: true, qty: num_(q2.amount), unit: q2.unit || 'EACH' };
+      }
+      return { ok: false, qty: '', unit: '', code: 401 };
+    }
+
+    // 429 = throttling. Se lo avisamos al llamador para que frene la corrida.
+    return { ok: false, qty: '', unit: '', code: code, throttled: (code === 429) };
+
   } catch (e) {
-    return { ok: false, qty: '', unit: '', error: (e.httpCode || 'ERR') };
+    return { ok: false, qty: '', unit: '', code: 'NET' };
   }
 }
 

@@ -36,6 +36,7 @@ const WM_CONFIG = {
   PROP_DASH_PASSWORD: 'DASH_PASSWORD_HASH',
   PROP_INV_CURSOR:    'INV_CURSOR',        // posición del barrido de inv. normal
   PROP_WFS_ENDPOINT:  'WFS_ENDPOINT_MODE', // 'new' | 'legacy' — se autodetecta
+  PROP_LAST_MAIN:     'LAST_MAIN_RUN',     // timestamp del último syncMain
 
   // ------- CacheService keys -------
   CACHE_TOKEN:         'wm_access_token',
@@ -49,8 +50,8 @@ const WM_CONFIG = {
   CHUNK_INTERVAL_MIN:   5,    // barrido de inventario normal
 
   // ------- Presupuestos de tiempo (Apps Script mata a los 6 min = 360s) -------
-  BUDGET_MAIN_MS:  270000,   // 4.5 min para catálogo + WFS
-  BUDGET_CHUNK_MS: 240000,   // 4 min para el barrido por SKU
+  BUDGET_MAIN_MS:  240000,   // 4 min para catálogo + WFS (medido: ~95 seg)
+  BUDGET_CHUNK_MS: 180000,   // 3 min para el barrido — deja hueco para syncMain
 
   // ------- Pacing (rate limit: 300 TPM) -------
   PAGE_PACING_MS: 220,   // entre páginas de catálogo/WFS
