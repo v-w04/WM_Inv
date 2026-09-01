@@ -324,21 +324,38 @@ function startProgressPolling() {
   }, 60000);
 }
 
+/**
+ * Muestra COBERTURA (cuántos SKUs ya tienen dato), no la posición del recorrido.
+ * La cobertura solo sube y se queda en 100%; el cursor vuelve a cero cada ciclo,
+ * y mostrarlo confundía — parecía que el avance se perdía.
+ */
 function updateProgress(p) {
   const el = document.getElementById('scanProgress');
   if (!el) return;
   if (!p || !p.total) { el.hidden = true; return; }
 
-  const pctv = p.pct != null ? p.pct : Math.round(p.cursor / p.total * 100);
-  const listo = pctv >= 100 || p.cursor === 0;
+  // Compatibilidad con la respuesta vieja del backend
+  const cubiertos = p.cubiertos != null ? p.cubiertos : (p.cursor || 0);
+  const pctCob    = p.pctCobertura != null ? p.pctCobertura
+                    : Math.round(cubiertos / p.total * 100);
+  const completo  = pctCob >= 100;
+
+  // Solo mencionamos el refresco si de veras está a media pasada
+  const enPase = p.pctPase != null && p.pctPase > 0 && p.pctPase < 100;
+  const nota = (completo && enPase)
+    ? ' · refrescando (' + p.pctPase + '% de la pasada)'
+    : '';
+
   el.hidden = false;
-  el.innerHTML = listo
-    ? '<span class="scan__label">Inventario propio: barrido completo</span>' +
+  el.innerHTML = completo
+    ? '<span class="scan__label">Inventario propio · los ' + fmt(p.total) +
+      ' SKUs tienen dato' + nota + '</span>' +
       '<div class="progress"><div class="progress__fill progress__fill--done" style="width:100%"></div></div>' +
       '<span class="scan__pct" style="color:var(--ok-fg)">100%</span>'
-    : '<span class="scan__label">Barriendo inventario propio · ' + fmt(p.cursor) + ' de ' + fmt(p.total) + '</span>' +
-      '<div class="progress"><div class="progress__fill" style="width:' + pctv + '%"></div></div>' +
-      '<span class="scan__pct">' + pctv + '%</span>';
+    : '<span class="scan__label">Consultando inventario propio · ' + fmt(cubiertos) +
+      ' de ' + fmt(p.total) + ' SKUs</span>' +
+      '<div class="progress"><div class="progress__fill" style="width:' + pctCob + '%"></div></div>' +
+      '<span class="scan__pct">' + pctCob + '%</span>';
 }
 
 function updateWfsBadge(mode) {

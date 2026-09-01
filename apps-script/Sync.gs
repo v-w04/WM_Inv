@@ -331,11 +331,21 @@ function loadRows_() {
     });
   });
 
+  // Cobertura = cuántos SKUs YA tienen dato de inventario.
+  // Es distinto del cursor: el cursor es la posición del recorrido actual
+  // y vuelve a cero en cada ciclo, la cobertura solo sube.
+  let conDato = 0;
+  Object.keys(regular).forEach(function(s){
+    if (regular[s].invNormal !== '' && regular[s].invNormal !== undefined) conDato++;
+  });
+
   const cursor = getInvCursor_();
   const progress = {
-    cursor: cursor,
+    cubiertos: conDato,
     total: master.length,
-    pct: master.length ? Math.round((cursor / master.length) * 100) : 0,
+    pctCobertura: master.length ? Math.round((conDato / master.length) * 100) : 0,
+    cursor: cursor,
+    pctPase: master.length ? Math.round((cursor / master.length) * 100) : 0,
   };
 
   const payload = { rows: rows, ts: Date.now(), progress: progress };

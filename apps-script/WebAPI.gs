@@ -91,15 +91,26 @@ function inventoryAction_(force) {
 /** Estado del barrido de inventario normal, sin traer todas las filas */
 function progressAction_() {
   const cursor = getInvCursor_();
-  let total = 0;
+  let total = 0, cubiertos = 0;
   try {
-    total = Math.max(0, getSheet_(WM_CONFIG.SHEET_REGULAR).getLastRow() - 1);
+    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    total = Math.max(0, sh.getLastRow() - 1);
+    if (total > 0) {
+      // Columna B = cantidad. Si tiene valor, ese SKU ya fue barrido.
+      const vals = sh.getRange(2, 2, total, 1).getValues();
+      for (let i = 0; i < vals.length; i++) {
+        if (vals[i][0] !== '' && vals[i][0] !== null) cubiertos++;
+      }
+    }
   } catch (e) {}
+
   return json_({
     ok: true,
-    cursor: cursor,
+    cubiertos: cubiertos,
     total: total,
-    pct: total ? Math.round((cursor / total) * 100) : 0,
+    pctCobertura: total ? Math.round((cubiertos / total) * 100) : 0,
+    cursor: cursor,
+    pctPase: total ? Math.round((cursor / total) * 100) : 0,
     chunkMin: WM_CONFIG.CHUNK_INTERVAL_MIN,
   });
 }
