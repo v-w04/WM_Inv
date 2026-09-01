@@ -91,7 +91,13 @@ const LOCKED_COLS = new Set([
    Init
    ============================================================ */
 document.addEventListener('DOMContentLoaded', () => {
-  if (!window.APPS_SCRIPT_URL || APPS_SCRIPT_URL.indexOf('PON_AQUI') >= 0) {
+  // Ojo: no usar `window.APPS_SCRIPT_URL` como única vía — si config.js
+  // declara la variable con const/let, existe en el scope global pero NO
+  // como propiedad de window.
+  var urlOk = (typeof APPS_SCRIPT_URL !== 'undefined')
+              && APPS_SCRIPT_URL
+              && APPS_SCRIPT_URL.indexOf('PON_AQUI') < 0;
+  if (!urlOk) {
     showLoginError('Falta configurar APPS_SCRIPT_URL en config.js');
     return;
   }
