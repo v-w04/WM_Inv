@@ -145,13 +145,46 @@ async function onLogout() {
 /* ============================================================
    API — POST form-urlencoded (evita preflight CORS)
    ============================================================ */
-async function apiCall(params) {
+async function apiCall(params, timeoutMs) {
   const body = new URLSearchParams();
   Object.keys(params).forEach(k => body.append(k, params[k]));
-  const resp = await fetch(APPS_SCRIPT_URL, { method: 'POST', body, redirect: 'follow' });
+
+  // Sin límite, una URL muerta o un trigger ocupado dejan la UI colgada.
+  // login/progress deben ser rápidos; inventory/refresh pueden tardar ~2 min.
+  const limite = timeoutMs || 30000;
+  const ctrl = new AbortController();
+  const reloj = setTimeout(() => ctrl.abort(), limite);
+
+  let resp;
+  try {
+    resp = await fetch(APPS_SCRIPT_URL, {
+      method: 'POST', body, redirect: 'follow', signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(reloj);
+    if (e.name === 'AbortError') {
+      throw new Error('El backend no respondió en ' + Math.round(limite / 1000) +
+                      ' seg. Puede haber un proceso corriendo — espera un minuto y reintenta.');
+    }
+    throw new Error('No se pudo contactar el backend. Revisa que la URL en config.js ' +
+                    'sea la de la implementación activa y que su acceso sea "Cualquier persona".');
+  }
+  clearTimeout(reloj);
+
+  if (resp.status === 404) {
+    throw new Error('La URL del backend ya no existe (404). Se creó una implementación ' +
+                    'nueva y config.js apunta a la vieja.');
+  }
+
   const text = await resp.text();
   try { return JSON.parse(text); }
-  catch (e) { throw new Error('Respuesta inválida del backend: ' + text.substring(0, 160)); }
+  catch (e) {
+    if (text.indexOf('<') === 0) {
+      throw new Error('El backend devolvió una página en vez de datos. ' +
+                      'Revisa que el acceso de la implementación sea "Cualquier persona".');
+    }
+    throw new Error('Respuesta inválida del backend: ' + text.substring(0, 160));
+  }
 }
 
 /* ============================================================
@@ -160,7 +193,8 @@ async function apiCall(params) {
 async function load(force) {
   showLoading(force ? 'Refrescando catálogo y WFS desde Walmart… (~90 seg)' : 'Cargando inventario…');
   try {
-    const res = await apiCall({ action: force ? 'refresh' : 'inventory', token: STATE.token });
+    // El sync completo puede tardar ~2 min, por eso el límite es más largo
+    const res = await apiCall({ action: force ? 'refresh' : 'inventory', token: STATE.token }, 180000);
     if (!res.ok) {
       if (res.error === 'unauthorized') return onLogout();
       throw new Error(res.error);
