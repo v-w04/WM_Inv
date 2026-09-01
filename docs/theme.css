@@ -1,0 +1,509 @@
+/* ============================================================================
+   ELECTRONICS MÉXICO · SISTEMA DE DISEÑO
+   Estilo 1 — Base
+   ============================================================================
+
+   Este archivo es la ÚNICA fuente de verdad para colores, tipografía y
+   espaciado. Todo lo demás (style.css, etc.) consume estas variables.
+
+   Para cambiar el look de TODAS las apps: edita los valores de aquí.
+   Nunca escribas un color literal en otro archivo.
+
+   Uso:
+     <link rel="stylesheet" href="theme.css">   <- primero
+     <link rel="stylesheet" href="style.css">   <- después
+
+   Referencia visual: estilo.html muestra todos los componentes.
+   ============================================================================ */
+
+:root {
+
+  /* ==========================================================================
+     1 · SUPERFICIES
+     De más profunda a más elevada. Entre más "alto" el elemento, más claro.
+     ========================================================================== */
+
+  --surface-deep:      #010409;   /* fondo del navegador, insets */
+  --surface-base:      #0d1117;   /* fondo de la página */
+  --surface-raised:    #161b22;   /* barra lateral, header */
+  --surface-card:      #1a2029;   /* tarjetas, paneles */
+  --surface-hover:     #1f262f;   /* fila o tarjeta bajo el cursor */
+  --surface-input:     #21262d;   /* inputs, selects */
+
+  /* ==========================================================================
+     2 · BORDES
+     ========================================================================== */
+
+  --border-default:    #30363d;   /* bordes visibles */
+  --border-subtle:     #21262d;   /* separadores internos, filas de tabla */
+  --border-strong:     #3d444d;   /* énfasis, foco */
+
+  /* ==========================================================================
+     3 · TEXTO
+     ========================================================================== */
+
+  --text-primary:      #e6edf3;   /* títulos, datos importantes */
+  --text-secondary:    #b1bac4;   /* cuerpo */
+  --text-muted:        #7d8590;   /* etiquetas, ayudas, metadatos */
+  --text-disabled:     #545d68;   /* deshabilitado, placeholders */
+  --text-on-accent:    #ffffff;   /* texto sobre botones de color */
+
+  /* ==========================================================================
+     4 · MARCA
+     El azul es el color de acción: botones primarios, links, selección.
+     ========================================================================== */
+
+  --brand-primary:     #1f6feb;   /* botones, elementos activos */
+  --brand-primary-hi:  #388bfd;   /* hover */
+  --brand-primary-lo:  #1158c7;   /* pressed */
+  --brand-link:        #58a6ff;   /* links en texto */
+  --brand-cyan:        #39c5cf;   /* acento del logo */
+
+  /* Fondos tenues de marca — para chips y estados seleccionados */
+  --brand-primary-bg:  rgba(56, 139, 253, 0.15);
+  --brand-primary-br:  rgba(56, 139, 253, 0.4);
+
+  /* ==========================================================================
+     5 · ESTADOS SEMÁNTICOS
+     REGLA: el color nunca va solo. Siempre acompañado de texto o ícono.
+     Un usuario con daltonismo debe entender el estado sin ver el color.
+     ========================================================================== */
+
+  /* Bien / éxito / publicado / pagado */
+  --ok-fg:             #3fb950;
+  --ok-bg:             rgba(63, 185, 80, 0.15);
+  --ok-border:         rgba(63, 185, 80, 0.4);
+
+  /* Atención / pendiente / por vencer */
+  --warn-fg:           #d29922;
+  --warn-bg:           rgba(210, 153, 34, 0.15);
+  --warn-border:       rgba(210, 153, 34, 0.4);
+
+  /* Problema / agotado / despublicado */
+  --danger-fg:         #f85149;
+  --danger-bg:         rgba(248, 81, 73, 0.15);
+  --danger-border:     rgba(248, 81, 73, 0.4);
+
+  /* Informativo / en proceso / neutro destacado */
+  --info-fg:           #a371f7;
+  --info-bg:           rgba(163, 113, 247, 0.15);
+  --info-border:       rgba(163, 113, 247, 0.4);
+
+  /* ==========================================================================
+     6 · TIPOGRAFÍA
+     ========================================================================== */
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans",
+               Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
+               "Liberation Mono", monospace;
+
+  /* Escala — cada paso ~1.2x */
+  --text-xs:    11px;   /* etiquetas de sección, metadatos */
+  --text-sm:    12px;   /* tablas, chips */
+  --text-base:  13px;   /* cuerpo por defecto */
+  --text-md:    14px;   /* botones, inputs */
+  --text-lg:    16px;   /* subtítulos */
+  --text-xl:    20px;   /* títulos de sección */
+  --text-2xl:   24px;   /* título de página */
+  --text-hero:  34px;   /* números de KPI */
+
+  --weight-normal:   400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:  1.2;
+  --leading-normal: 1.5;
+
+  /* ==========================================================================
+     7 · ESPACIADO
+     Escala de 4px. Usa estos, no números sueltos.
+     ========================================================================== */
+
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+
+  /* ==========================================================================
+     8 · FORMA
+     ========================================================================== */
+
+  --radius-sm:   4px;   /* chips, badges */
+  --radius-md:   6px;   /* botones, inputs */
+  --radius-lg:   8px;   /* tarjetas */
+  --radius-xl:  12px;   /* paneles grandes, modales */
+  --radius-full: 999px; /* pills */
+
+  --shadow-sm: 0 1px 3px rgba(1, 4, 9, 0.5);
+  --shadow-md: 0 4px 12px rgba(1, 4, 9, 0.6);
+  --shadow-lg: 0 12px 32px rgba(1, 4, 9, 0.7);
+
+  /* ==========================================================================
+     9 · MOVIMIENTO
+     ========================================================================== */
+
+  --transition-fast: 0.12s ease;
+  --transition-base: 0.2s ease;
+
+  /* ==========================================================================
+     10 · LAYOUT
+     ========================================================================== */
+
+  --sidebar-width: 236px;
+  --header-height: 56px;
+}
+
+
+/* ============================================================================
+   RESET
+   ============================================================================ */
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  color: var(--text-primary);
+  background: var(--surface-base);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4 {
+  margin: 0;
+  line-height: var(--leading-tight);
+  font-weight: var(--weight-semibold);
+}
+
+a {
+  color: var(--brand-link);
+  text-decoration: none;
+}
+a:hover { text-decoration: underline; }
+
+code, .mono {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+}
+
+
+/* ============================================================================
+   COMPONENTES BASE
+   Estas clases se reutilizan en todas las apps.
+   ============================================================================ */
+
+/* ---- Marca / logo ---------------------------------------------------- */
+
+.em-logo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.em-logo__mark {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.em-logo__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.05;
+}
+.em-logo__name {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.em-logo__domain {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+}
+
+/* ---- Etiqueta de sección (WALMART, VENTAS, CATÁLOGO...) --------------- */
+
+.section-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ---- Tarjeta --------------------------------------------------------- */
+
+.card {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+.card--flush { padding: 0; overflow: hidden; }
+
+/* ---- Tarjeta de KPI --------------------------------------------------
+   Número grande + etiqueta. El color del número indica estado, pero la
+   etiqueta siempre dice qué es — nunca depende solo del color.
+   --------------------------------------------------------------------- */
+
+.stat {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.stat__label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.stat__value {
+  font-size: var(--text-hero);
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.stat__value--ok     { color: var(--ok-fg); }
+.stat__value--warn   { color: var(--warn-fg); }
+.stat__value--danger { color: var(--danger-fg); }
+.stat__value--info   { color: var(--info-fg); }
+.stat__hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.stat__action {
+  font-size: var(--text-xs);
+  color: var(--brand-link);
+  cursor: pointer;
+  margin-top: var(--space-1);
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  font-family: inherit;
+}
+.stat__action:hover { text-decoration: underline; }
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+/* ---- Botones --------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 14px;
+  font-family: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
+  background: var(--surface-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  white-space: nowrap;
+}
+.btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn--primary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--text-on-accent);
+}
+.btn--primary:hover {
+  background: var(--brand-primary-hi);
+  border-color: var(--brand-primary-hi);
+  color: var(--text-on-accent);
+}
+.btn--danger {
+  color: var(--danger-fg);
+  border-color: var(--danger-border);
+}
+.btn--danger:hover {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+.btn--sm { padding: 4px 10px; font-size: var(--text-xs); }
+.btn--block { width: 100%; justify-content: center; }
+
+/* ---- Chips / pills ---------------------------------------------------
+   Siempre llevan texto. El color refuerza, no informa por sí solo.
+   --------------------------------------------------------------------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 9px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  border-radius: var(--radius-full);
+  background: var(--surface-input);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  white-space: nowrap;
+}
+.pill--ok     { background: var(--ok-bg);     color: var(--ok-fg);     border-color: var(--ok-border); }
+.pill--warn   { background: var(--warn-bg);   color: var(--warn-fg);   border-color: var(--warn-border); }
+.pill--danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+.pill--info   { background: var(--info-bg);   color: var(--info-fg);   border-color: var(--info-border); }
+.pill--brand  { background: var(--brand-primary-bg); color: var(--brand-link); border-color: var(--brand-primary-br); }
+
+/* ---- Campos ---------------------------------------------------------- */
+
+.field {
+  padding: 6px 10px;
+  font-family: inherit;
+  font-size: var(--text-md);
+  color: var(--text-primary);
+  background: var(--surface-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  transition: var(--transition-fast);
+}
+.field::placeholder { color: var(--text-disabled); }
+.field:focus {
+  outline: none;
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px var(--brand-primary-bg);
+}
+.field--sm { padding: 3px 7px; font-size: var(--text-sm); }
+
+/* ---- Panel de filtros ------------------------------------------------ */
+
+.filter-bar {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: var(--space-3);
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* ---- Tabla ----------------------------------------------------------- */
+
+.table-wrap {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  overflow: auto;
+}
+table.data {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+}
+table.data thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  user-select: none;
+}
+table.data tbody td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+table.data tbody tr:hover { background: var(--surface-hover); }
+table.data td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+table.data td.mono { font-family: var(--font-mono); font-size: var(--text-xs); }
+
+/* ---- Estados de carga ------------------------------------------------ */
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--brand-primary);
+  border-radius: 50%;
+  animation: em-spin 0.8s linear infinite;
+  vertical-align: middle;
+}
+@keyframes em-spin { to { transform: rotate(360deg); } }
+
+.empty-state {
+  padding: var(--space-10);
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ---- Barra de progreso ----------------------------------------------- */
+
+.progress {
+  height: 6px;
+  background: var(--surface-input);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+.progress__fill {
+  height: 100%;
+  background: var(--brand-primary);
+  border-radius: var(--radius-full);
+  transition: width 0.4s ease;
+}
+.progress__fill--done { background: var(--ok-fg); }
+
+/* ---- Mensajes -------------------------------------------------------- */
+
+.alert {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  border: 1px solid;
+}
+.alert--ok     { background: var(--ok-bg);     color: var(--ok-fg);     border-color: var(--ok-border); }
+.alert--warn   { background: var(--warn-bg);   color: var(--warn-fg);   border-color: var(--warn-border); }
+.alert--danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+
+/* ---- Utilidades ------------------------------------------------------ */
+
+.stack   { display: flex; flex-direction: column; gap: var(--space-3); }
+.row     { display: flex; gap: var(--space-2); align-items: center; flex-wrap: wrap; }
+.spacer  { flex: 1; }
+.muted   { color: var(--text-muted); }
+.tabular { font-variant-numeric: tabular-nums; }
+[hidden] { display: none !important; }

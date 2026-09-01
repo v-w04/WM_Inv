@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Estilo 1 · Base — Electronics México</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<link rel="stylesheet" href="theme.css">
+<style>
+  .wrap { max-width: 1100px; margin: 0 auto; padding: var(--space-8) var(--space-5); }
+  section { margin-bottom: var(--space-10); }
+  h2 { font-size: var(--text-xl); margin-bottom: var(--space-2); }
+  h3 { font-size: var(--text-base); color: var(--text-muted); margin: var(--space-5) 0 var(--space-2);
+       text-transform: uppercase; letter-spacing: .07em; font-size: var(--text-xs); }
+  .lead { color: var(--text-muted); margin: 0 0 var(--space-5); max-width: 62ch; }
+
+  .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr)); gap: var(--space-2); }
+  .sw { border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; }
+  .sw__chip { height: 52px; }
+  .sw__meta { padding: var(--space-2); background: var(--surface-card); }
+  .sw__name { font-size: var(--text-xs); font-family: var(--font-mono); color: var(--text-secondary); }
+  .sw__hex  { font-size: var(--text-xs); color: var(--text-muted); font-family: var(--font-mono); }
+  .sw__use  { font-size: var(--text-xs); color: var(--text-disabled); margin-top: 2px; }
+
+  .demo { background: var(--surface-card); border: 1px solid var(--border-default);
+          border-radius: var(--radius-lg); padding: var(--space-4); }
+  .demo + .demo { margin-top: var(--space-2); }
+
+  pre { background: var(--surface-deep); border: 1px solid var(--border-subtle);
+        border-radius: var(--radius-md); padding: var(--space-3); overflow-x: auto;
+        font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary);
+        margin: var(--space-2) 0 0; }
+
+  .scale-row { display:flex; align-items:baseline; gap: var(--space-4); padding: var(--space-2) 0;
+               border-bottom: 1px solid var(--border-subtle); }
+  .scale-row code { color: var(--text-muted); min-width: 120px; }
+  .space-bar { background: var(--brand-primary); height: 14px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="em-logo" style="margin-bottom:var(--space-6)">
+    <svg class="em-logo__mark" viewBox="0 0 40 40" style="width:40px;height:40px">
+      <defs><linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#39c5cf"/><stop offset="55%" stop-color="#2f8fd8"/>
+        <stop offset="100%" stop-color="#1f6feb"/></linearGradient></defs>
+      <circle cx="20" cy="20" r="19" fill="url(#g)"/>
+      <path d="M27 15.5a9 9 0 1 0 0 9" fill="none" stroke="#0d1117" stroke-width="4.4" stroke-linecap="round"/>
+      <circle cx="20" cy="20" r="2.6" fill="#0d1117"/>
+    </svg>
+    <div class="em-logo__text">
+      <span class="em-logo__name">electronics</span>
+      <span class="em-logo__domain">MEXICO.COM</span>
+    </div>
+  </div>
+
+  <h1 style="font-size:var(--text-2xl);margin-bottom:var(--space-2)">Estilo 1 · Base</h1>
+  <p class="lead">
+    Sistema de diseño de Electronics México. Todos los valores viven en
+    <code>theme.css</code> como variables CSS. Para cambiar el look de todas las
+    apps, edita ahí — nunca escribas un color literal en otro archivo.
+  </p>
+
+  <!-- ═══════ SUPERFICIES ═══════ -->
+  <section>
+    <h2>Superficies</h2>
+    <p class="lead">De más profunda a más elevada. Entre más "alto" el elemento, más claro el fondo.</p>
+    <div class="swatches">
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-deep)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-deep</div><div class="sw__hex">#010409</div>
+        <div class="sw__use">insets, code blocks</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-base)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-base</div><div class="sw__hex">#0d1117</div>
+        <div class="sw__use">fondo de página</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-raised)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-raised</div><div class="sw__hex">#161b22</div>
+        <div class="sw__use">header, sidebar</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-card)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-card</div><div class="sw__hex">#1a2029</div>
+        <div class="sw__use">tarjetas, paneles</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-hover)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-hover</div><div class="sw__hex">#1f262f</div>
+        <div class="sw__use">bajo el cursor</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--surface-input)"></div>
+        <div class="sw__meta"><div class="sw__name">--surface-input</div><div class="sw__hex">#21262d</div>
+        <div class="sw__use">campos, botones</div></div></div>
+    </div>
+  </section>
+
+  <!-- ═══════ MARCA ═══════ -->
+  <section>
+    <h2>Marca</h2>
+    <p class="lead">El azul es el color de acción: botones primarios, links, elementos activos.</p>
+    <div class="swatches">
+      <div class="sw"><div class="sw__chip" style="background:var(--brand-primary)"></div>
+        <div class="sw__meta"><div class="sw__name">--brand-primary</div><div class="sw__hex">#1f6feb</div>
+        <div class="sw__use">botón primario</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--brand-primary-hi)"></div>
+        <div class="sw__meta"><div class="sw__name">--brand-primary-hi</div><div class="sw__hex">#388bfd</div>
+        <div class="sw__use">hover</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--brand-link)"></div>
+        <div class="sw__meta"><div class="sw__name">--brand-link</div><div class="sw__hex">#58a6ff</div>
+        <div class="sw__use">links en texto</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--brand-cyan)"></div>
+        <div class="sw__meta"><div class="sw__name">--brand-cyan</div><div class="sw__hex">#39c5cf</div>
+        <div class="sw__use">acento del logo</div></div></div>
+    </div>
+  </section>
+
+  <!-- ═══════ ESTADOS ═══════ -->
+  <section>
+    <h2>Estados</h2>
+    <p class="lead">
+      <strong>Regla:</strong> el color nunca va solo. Siempre acompañado de texto.
+      Alguien con daltonismo debe entender el estado sin distinguir el color —
+      por eso las pills dicen "Publicado", no solo se pintan de verde.
+    </p>
+    <div class="swatches">
+      <div class="sw"><div class="sw__chip" style="background:var(--ok-fg)"></div>
+        <div class="sw__meta"><div class="sw__name">--ok-fg</div><div class="sw__hex">#3fb950</div>
+        <div class="sw__use">publicado, pagado, completo</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--warn-fg)"></div>
+        <div class="sw__meta"><div class="sw__name">--warn-fg</div><div class="sw__hex">#d29922</div>
+        <div class="sw__use">pendiente, por vencer</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--danger-fg)"></div>
+        <div class="sw__meta"><div class="sw__name">--danger-fg</div><div class="sw__hex">#f85149</div>
+        <div class="sw__use">agotado, despublicado</div></div></div>
+      <div class="sw"><div class="sw__chip" style="background:var(--info-fg)"></div>
+        <div class="sw__meta"><div class="sw__name">--info-fg</div><div class="sw__hex">#a371f7</div>
+        <div class="sw__use">en proceso, informativo</div></div></div>
+    </div>
+  </section>
+
+  <!-- ═══════ TEXTO ═══════ -->
+  <section>
+    <h2>Texto</h2>
+    <div class="demo">
+      <div style="color:var(--text-primary);font-size:var(--text-lg)">Primary — títulos y datos importantes</div>
+      <div style="color:var(--text-secondary)">Secondary — cuerpo de texto</div>
+      <div style="color:var(--text-muted)">Muted — etiquetas, metadatos, ayudas</div>
+      <div style="color:var(--text-disabled)">Disabled — placeholders, deshabilitado</div>
+    </div>
+
+    <h3>Escala</h3>
+    <div class="demo">
+      <div class="scale-row"><code>--text-hero</code><span style="font-size:var(--text-hero);font-weight:700">3,275</span></div>
+      <div class="scale-row"><code>--text-2xl</code><span style="font-size:var(--text-2xl)">Título de página</span></div>
+      <div class="scale-row"><code>--text-xl</code><span style="font-size:var(--text-xl)">Título de sección</span></div>
+      <div class="scale-row"><code>--text-lg</code><span style="font-size:var(--text-lg)">Subtítulo</span></div>
+      <div class="scale-row"><code>--text-md</code><span style="font-size:var(--text-md)">Botones e inputs</span></div>
+      <div class="scale-row"><code>--text-base</code><span style="font-size:var(--text-base)">Cuerpo por defecto</span></div>
+      <div class="scale-row"><code>--text-sm</code><span style="font-size:var(--text-sm)">Tablas y chips</span></div>
+      <div class="scale-row"><code>--text-xs</code><span style="font-size:var(--text-xs)">Etiquetas y metadatos</span></div>
+    </div>
+  </section>
+
+  <!-- ═══════ KPI ═══════ -->
+  <section>
+    <h2>Tarjetas de KPI</h2>
+    <p class="lead">Número grande con etiqueta. El color del número refuerza el estado, pero la etiqueta siempre dice qué es.</p>
+    <div class="stat-grid">
+      <div class="stat">
+        <span class="stat__label">SKUs en catálogo</span>
+        <span class="stat__value">3,275</span>
+        <span class="stat__hint">total sincronizado</span>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Publicados</span>
+        <span class="stat__value stat__value--ok">1,753</span>
+        <span class="stat__hint">54% del catálogo</span>
+        <button class="stat__action">Filtrar</button>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Sin publicar</span>
+        <span class="stat__value stat__value--danger">1,282</span>
+        <span class="stat__hint">39% no se puede vender</span>
+        <button class="stat__action">Filtrar</button>
+      </div>
+      <div class="stat">
+        <span class="stat__label">Problema Walmart</span>
+        <span class="stat__value stat__value--warn">239</span>
+        <span class="stat__hint">error del lado de ellos</span>
+        <button class="stat__action">Filtrar</button>
+      </div>
+    </div>
+    <pre>&lt;div class="stat"&gt;
+  &lt;span class="stat__label"&gt;Publicados&lt;/span&gt;
+  &lt;span class="stat__value stat__value--ok"&gt;1,753&lt;/span&gt;
+  &lt;span class="stat__hint"&gt;54% del catálogo&lt;/span&gt;
+&lt;/div&gt;</pre>
+  </section>
+
+  <!-- ═══════ BOTONES ═══════ -->
+  <section>
+    <h2>Botones</h2>
+    <div class="demo row">
+      <button class="btn btn--primary">Primario</button>
+      <button class="btn">Secundario</button>
+      <button class="btn btn--danger">Salir</button>
+      <button class="btn btn--sm">Pequeño</button>
+      <button class="btn" disabled>Deshabilitado</button>
+    </div>
+    <pre>&lt;button class="btn btn--primary"&gt;Guardar&lt;/button&gt;
+&lt;button class="btn"&gt;Cancelar&lt;/button&gt;
+&lt;button class="btn btn--danger"&gt;Eliminar&lt;/button&gt;</pre>
+  </section>
+
+  <!-- ═══════ PILLS ═══════ -->
+  <section>
+    <h2>Pills</h2>
+    <div class="demo row">
+      <span class="pill">Neutro</span>
+      <span class="pill pill--ok">Publicado</span>
+      <span class="pill pill--warn">Pendiente</span>
+      <span class="pill pill--danger">Agotado</span>
+      <span class="pill pill--info">En proceso</span>
+      <span class="pill pill--brand">WFS</span>
+    </div>
+    <pre>&lt;span class="pill pill--ok"&gt;Publicado&lt;/span&gt;</pre>
+  </section>
+
+  <!-- ═══════ CAMPOS ═══════ -->
+  <section>
+    <h2>Campos y filtros</h2>
+    <div class="filter-bar">
+      <input type="text" class="field" placeholder="🔍 Buscar…" style="min-width:220px">
+      <select class="field"><option>Todos los canales</option><option>Walmart</option></select>
+      <button class="btn btn--primary">Aplicar</button>
+      <button class="btn">Limpiar</button>
+      <div class="spacer"></div>
+      <span class="pill">1,607 resultados</span>
+    </div>
+  </section>
+
+  <!-- ═══════ TABLA ═══════ -->
+  <section>
+    <h2>Tabla</h2>
+    <div class="table-wrap">
+      <table class="data">
+        <thead><tr><th>SKU</th><th>Producto</th><th>Precio</th><th>Publicación</th><th>Stock</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">HIS-32H40G-NEG-5100</td><td>Pantalla Hisense 32"</td>
+              <td class="num">2,649</td><td style="color:var(--danger-fg);font-weight:600">UNPUBLISHED</td>
+              <td class="num">11</td></tr>
+          <tr><td class="mono">AMA-FIRETVSTICK4K-NEG</td><td>Fire TV Stick 4K</td>
+              <td class="num">741</td><td style="color:var(--ok-fg);font-weight:600">PUBLISHED</td>
+              <td class="num">18</td></tr>
+          <tr><td class="mono">LOG-MK250-ROS-4547</td><td>Combo Logitech MK250</td>
+              <td class="num">532</td><td style="color:var(--warn-fg);font-weight:600">SYSTEM_PROBLEM</td>
+              <td class="num">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════ PROGRESO Y AVISOS ═══════ -->
+  <section>
+    <h2>Progreso y avisos</h2>
+    <div class="demo stack">
+      <div>
+        <div class="row" style="margin-bottom:var(--space-2)">
+          <span class="muted" style="font-size:var(--text-sm)">Barriendo inventario · 1,875 de 3,275</span>
+          <div class="spacer"></div>
+          <strong style="color:var(--brand-link)">57%</strong>
+        </div>
+        <div class="progress"><div class="progress__fill" style="width:57%"></div></div>
+      </div>
+      <div class="alert alert--ok">Sincronización completa: 3,275 SKUs en 78 segundos.</div>
+      <div class="alert alert--warn">239 SKUs con problema del lado de Walmart.</div>
+      <div class="alert alert--danger">$123,480 MXN inmovilizados en bodega sin poder venderse.</div>
+    </div>
+  </section>
+
+  <!-- ═══════ ESPACIADO ═══════ -->
+  <section>
+    <h2>Espaciado</h2>
+    <p class="lead">Escala de 4px. Usa estos tokens, no números sueltos.</p>
+    <div class="demo">
+      <div class="scale-row"><code>--space-1 · 4px</code><div class="space-bar" style="width:4px"></div></div>
+      <div class="scale-row"><code>--space-2 · 8px</code><div class="space-bar" style="width:8px"></div></div>
+      <div class="scale-row"><code>--space-3 · 12px</code><div class="space-bar" style="width:12px"></div></div>
+      <div class="scale-row"><code>--space-4 · 16px</code><div class="space-bar" style="width:16px"></div></div>
+      <div class="scale-row"><code>--space-5 · 20px</code><div class="space-bar" style="width:20px"></div></div>
+      <div class="scale-row"><code>--space-6 · 24px</code><div class="space-bar" style="width:24px"></div></div>
+      <div class="scale-row"><code>--space-8 · 32px</code><div class="space-bar" style="width:32px"></div></div>
+      <div class="scale-row"><code>--space-10 · 40px</code><div class="space-bar" style="width:40px"></div></div>
+    </div>
+  </section>
+
+  <!-- ═══════ CÓMO USARLO ═══════ -->
+  <section>
+    <h2>Cómo usarlo en otra app</h2>
+    <div class="demo">
+      <p style="margin-top:0">Copia <code>theme.css</code> y enlázalo antes de tus estilos:</p>
+      <pre>&lt;link rel="stylesheet" href="theme.css"&gt;   &lt;!-- primero --&gt;
+&lt;link rel="stylesheet" href="style.css"&gt;   &lt;!-- después --&gt;</pre>
+      <p>En tu CSS, consume las variables en vez de escribir colores:</p>
+      <pre>/* ✅ así */
+.mi-panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+/* ❌ nunca así */
+.mi-panel {
+  background: #1a2029;
+  border: 1px solid #30363d;
+}</pre>
+      <p style="margin-bottom:0">
+        Para cambiar el look de <em>todas</em> las apps: edita un valor en
+        <code>theme.css</code> y se propaga solo.
+      </p>
+    </div>
+  </section>
+
+  <p class="muted" style="font-size:var(--text-xs);text-align:center;padding:var(--space-8) 0 0">
+    Estilo 1 · Base — Electronics México
+  </p>
+
+</div>
+</body>
+</html>
