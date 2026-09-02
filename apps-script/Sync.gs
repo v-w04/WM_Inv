@@ -252,21 +252,27 @@ function writeMasterSheet_(rows) {
     return MASTER_COLS.map(function(c){ return r[c] != null ? r[c] : ''; });
   }));
 
+  // ── REGLA: esta función escribe DATOS, no formato. ──
+  // Nada de congelar filas/columnas, colores de encabezado, anchos ni
+  // agrupaciones. El formato de la hoja es del usuario; si el script lo
+  // reimpone en cada corrida, borra su trabajo cada 10 minutos.
+  //
+  // La única excepción es el formato TEXTO de upc/gtin: sin él Sheets
+  // convierte "00063790259141" a 63790259141 y se pierden los ceros.
+  // Eso es corrección de datos, no estética — y solo se aplica si hace falta.
+
   sh.clearContents();
   SpreadsheetApp.flush();
 
-  // Formato TEXTO en upc/gtin/sku ANTES de escribir, para que Sheets
-  // no convierta "00063790259141" a 63790259141
   COLS_TEXTO.forEach(function(col){
     const i = MASTER_COLS.indexOf(col);
-    if (i >= 0) sh.getRange(1, i + 1, Math.max(values.length, 2), 1).setNumberFormat('@');
+    if (i < 0) return;
+    const rango = sh.getRange(1, i + 1, Math.max(values.length, 2), 1);
+    // Solo tocar si todavía no es texto, para no reescribir formato sin necesidad
+    if (rango.getNumberFormat() !== '@') rango.setNumberFormat('@');
   });
 
   sh.getRange(1, 1, values.length, MASTER_COLS.length).setValues(values);
-  sh.setFrozenRows(1);
-  sh.setFrozenColumns(1);
-  sh.getRange(1, 1, 1, MASTER_COLS.length)
-    .setFontWeight('bold').setBackground('#0071dc').setFontColor('#ffffff');
   SpreadsheetApp.flush();
 }
 
@@ -303,12 +309,10 @@ function ensureRegularSheet_(skus) {
     return p ? [s, p[0], p[1], p[2]] : [s, '', '', ''];
   }));
 
+  // Igual que arriba: solo datos, sin tocar el formato de la hoja.
   sh.clearContents();
   SpreadsheetApp.flush();
   sh.getRange(1, 1, values.length, 4).setValues(values);
-  sh.setFrozenRows(1);
-  sh.getRange(1, 1, 1, 4)
-    .setFontWeight('bold').setBackground('#0a8f3f').setFontColor('#ffffff');
   SpreadsheetApp.flush();
 
   return !mismoOrden;   // true = la lista cambió → reiniciar cursor
@@ -458,7 +462,6 @@ function logRun_(tipo, count, elapsed, nota) {
     const sh = getSheet_(WM_CONFIG.SHEET_LOG);
     if (sh.getLastRow() === 0) {
       sh.appendRow(['Timestamp', 'Proceso', 'Filas', 'Segundos', 'Nota']);
-      sh.getRange(1, 1, 1, 5).setFontWeight('bold');
     }
     sh.appendRow([new Date(), tipo, count, elapsed, nota || '']);
   } catch (e) {}
