@@ -347,22 +347,16 @@ function updateProgress(p) {
   if (!el) return;
   if (!p || !p.total) { el.hidden = true; return; }
 
-  // Compatibilidad con la respuesta vieja del backend
-  const cubiertos = p.cubiertos != null ? p.cubiertos : (p.cursor || 0);
-  const pctCob    = p.pctCobertura != null ? p.pctCobertura
-                    : Math.round(cubiertos / p.total * 100);
-  const completo  = pctCob >= 100;
-
-  // Solo mencionamos el refresco si de veras está a media pasada
-  const enPase = p.pctPase != null && p.pctPase > 0 && p.pctPase < 100;
-  const nota = (completo && enPase)
-    ? ' · refrescando (' + p.pctPase + '% de la pasada)'
-    : '';
+  const cubiertos = p.cubiertos != null ? p.cubiertos : 0;
+  const pctCob = p.pctCobertura != null
+    ? p.pctCobertura
+    : Math.round(cubiertos / p.total * 100);
+  const completo = pctCob >= 100;
 
   el.hidden = false;
   el.innerHTML = completo
     ? '<span class="scan__label">Inventario propio · los ' + fmt(p.total) +
-      ' SKUs tienen dato' + nota + '</span>' +
+      ' SKUs tienen dato</span>' +
       '<div class="progress"><div class="progress__fill progress__fill--done" style="width:100%"></div></div>' +
       '<span class="scan__pct" style="color:var(--ok-fg)">100%</span>'
     : '<span class="scan__label">Consultando inventario propio · ' + fmt(cubiertos) +

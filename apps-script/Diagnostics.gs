@@ -263,6 +263,41 @@ function porQueNoCorre() {
   }
   p('');
 
+  /* 2b · ¿El barrido está avanzando de verdad? */
+  p('── 2b. ¿El barrido avanza? ──');
+  try {
+    const shR = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    const totR = Math.max(0, shR.getLastRow() - 1);
+    let conDato = 0, masReciente = null;
+    if (totR > 0) {
+      const v = shR.getRange(2, 2, totR, 3).getValues();
+      v.forEach(function(r){
+        if (r[0] !== '' && r[0] !== null) {
+          conDato++;
+          if (r[2] instanceof Date && (!masReciente || r[2] > masReciente)) masReciente = r[2];
+        }
+      });
+    }
+    const pctc = totR ? Math.round(conDato / totR * 100) : 0;
+    p('   Cobertura: ' + conDato + ' de ' + totR + '  (' + pctc + '%)');
+    if (masReciente) {
+      const minsUlt = Math.round((Date.now() - masReciente.getTime()) / 60000);
+      p('   Último SKU consultado: hace ' + minsUlt + ' min');
+      if (minsUlt > WM_CONFIG.CHUNK_INTERVAL_MIN * 3) {
+        p('   ⚠ El barrido lleva rato sin escribir nada.');
+        culpable = culpable || 'el barrido no avanza';
+      } else {
+        p('   ✅ Avanzando');
+      }
+    } else if (conDato === 0) {
+      p('   ⚠ Ningún SKU tiene dato todavía.');
+      culpable = culpable || 'el barrido no ha escrito nada';
+    }
+  } catch (e) {
+    p('   ❌ ' + e.message);
+  }
+  p('');
+
   /* 3 · Presupuesto propio */
   p('── 3. Presupuesto de llamadas (nuestro contador) ──');
   const restan = fetchRestantes_();
@@ -307,7 +342,6 @@ function porQueNoCorre() {
     const reg = ss.getSheetByName(WM_CONFIG.SHEET_REGULAR);
     p('   Inventario:  ' + (inv ? Math.max(0, inv.getLastRow() - 1) + ' filas' : 'no existe'));
     p('   Inv_Normal:  ' + (reg ? Math.max(0, reg.getLastRow() - 1) + ' filas' : 'no existe'));
-    p('   Cursor del barrido: ' + getInvCursor_());
   } catch (e) {
     p('   ❌ ' + e.message);
   }

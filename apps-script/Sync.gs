@@ -90,13 +90,10 @@ function syncMain() {
     });
 
     writeMasterSheet_(rows);
-    // Solo reinicia el barrido si la lista de SKUs cambió de tamaño
-    // (si no, el cursor sigue siendo válido y no tiramos el avance).
-    const cambioLista = ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
-    if (cambioLista) {
-      resetInvCursor_();
-      Logger.log('  ℹ La lista de SKUs cambió — barrido reiniciado.');
-    }
+    // ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
+    // ya no usa cursor de posición, así que crecer el catálogo o que
+    // Walmart devuelva otro orden ya no borra el avance.
+    ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -143,18 +140,6 @@ function syncRegularChunk() {
       return { skipped: true, reason: 'sin SKUs' };
     }
 
-    const totalSkus = lastRow - 1;
-    let cursor = getInvCursor_();
-    if (cursor >= totalSkus) cursor = 0;   // ciclo terminado → vuelve a empezar
-
-    // Lee los SKUs pendientes desde el cursor
-    const remaining = totalSkus - cursor;
-    const skus = sh.getRange(cursor + 2, 1, remaining, 1).getValues();
-
-    Logger.log('▶ Barrido inv. normal desde ' + cursor + ' / ' + totalSkus);
-
-    // Tope por corrida: el que se alcance primero entre tiempo,
-    // número de SKUs, y presupuesto diario de llamadas.
     const restan = fetchRestantes_();
     const tope = Math.min(WM_CONFIG.MAX_SKUS_POR_CHUNK, Math.max(0, restan - 100));
     if (tope <= 0) {
@@ -162,41 +147,76 @@ function syncRegularChunk() {
       return { skipped: true, reason: 'sin presupuesto' };
     }
 
-    const results = [];
-    let errores = 0;
-    let fallosSeguidos = 0;
-    let throttled = false;
+    /* ── Armar la cola de trabajo ──────────────────────────────
+       Sin cursor de posición: se buscan las filas que faltan.
+       Un cursor se corrompe cuando el catálogo crece o Walmart
+       devuelve los items en otro orden — y entonces el avance
+       se reinicia solo, sin que nadie se entere.
 
-    for (let i = 0; i < skus.length && results.length < tope; i++) {
+       Prioridad 1: los que nunca se han consultado
+       Prioridad 2: los más viejos primero
+       ────────────────────────────────────────────────────────── */
+    const total = lastRow - 1;
+    const datos = sh.getRange(2, 1, total, 4).getValues();
+
+    const nuevos = [];
+    const viejos = [];
+
+    for (let i = 0; i < datos.length; i++) {
+      const sku = String(datos[i][0] || '').trim();
+      if (!sku) continue;
+      const tieneDato = datos[i][1] !== '' && datos[i][1] !== null;
+      if (!tieneDato) {
+        nuevos.push(i);
+      } else {
+        const ts = datos[i][3] instanceof Date ? datos[i][3].getTime() : 0;
+        viejos.push({ i: i, ts: ts });
+      }
+    }
+    viejos.sort(function(a, b){ return a.ts - b.ts; });
+
+    const cola = nuevos.concat(viejos.map(function(v){ return v.i; })).slice(0, tope);
+
+    if (!cola.length) {
+      Logger.log('⏭ Nada que barrer.');
+      return { skipped: true, reason: 'cola vacía' };
+    }
+
+    Logger.log('▶ Barrido: ' + cola.length + ' SKUs de la cola  (' +
+               nuevos.length + ' sin dato, ' + viejos.length + ' a refrescar)');
+
+    /* ── Procesar ────────────────────────────────────────────── */
+    let hechos = 0, errores = 0, fallosSeguidos = 0;
+    let throttled = false, sinPresupuesto = false;
+
+    for (let k = 0; k < cola.length; k++) {
       if (Date.now() > deadline) break;
 
-      const sku = String(skus[i][0] || '').trim();
-      if (!sku) { results.push(['', '', '', '']); continue; }
-
+      const idx = cola[k];
+      const sku = String(datos[idx][0]).trim();
       const inv = getInventoryForSku(sku);
 
       if (inv.sinPresupuesto) {
+        sinPresupuesto = true;
         Logger.log('  ⏹ Presupuesto agotado a media corrida. Se guarda el avance.');
         break;
       }
 
       if (inv.ok) {
         fallosSeguidos = 0;
-        results.push([sku, inv.qty, inv.unit, new Date()]);
+        hechos++;
+        datos[idx][1] = inv.qty;
+        datos[idx][2] = inv.unit;
+        datos[idx][3] = new Date();
       } else {
         errores++;
         fallosSeguidos++;
-        // Deja la celda intacta para que el siguiente ciclo lo reintente
-        results.push([sku, '', '', '']);
-
         if (inv.throttled) throttled = true;
-
-        // Circuit breaker: si Walmart nos está frenando, no tiene caso
-        // seguir quemando el presupuesto. Guardamos el avance y salimos.
+        // No se toca la celda: queda en la cola para el siguiente intento
         if (fallosSeguidos >= 8) {
           Logger.log('  ⚠ ' + fallosSeguidos + ' fallos seguidos' +
                      (throttled ? ' (HTTP 429 — throttling)' : '') +
-                     ' — se corta la corrida y se guarda el avance.');
+                     ' — se corta y se guarda el avance.');
           break;
         }
       }
@@ -204,26 +224,35 @@ function syncRegularChunk() {
       Utilities.sleep(throttled ? WM_CONFIG.SKU_PACING_MS * 4 : WM_CONFIG.SKU_PACING_MS);
     }
 
-    // Escribe el bloque procesado
-    if (results.length) {
-      sh.getRange(cursor + 2, 1, results.length, 4).setValues(results);
+    /* ── Guardar de una sola escritura ───────────────────────── */
+    if (hechos > 0) {
+      sh.getRange(2, 1, total, 4).setValues(datos);
       SpreadsheetApp.flush();
+      invalidateCache_();
     }
 
-    const newCursor = cursor + results.length;
-    setInvCursor_(newCursor >= totalSkus ? 0 : newCursor);
-    invalidateCache_();
-
+    /* ── Reportar cobertura, no posición ─────────────────────── */
+    let conDato = 0;
+    for (let i = 0; i < datos.length; i++) {
+      if (datos[i][1] !== '' && datos[i][1] !== null) conDato++;
+    }
+    const pct = total ? Math.round(conDato / total * 100) : 0;
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
-    const pct = ((newCursor / totalSkus) * 100).toFixed(1);
-    const ciclo = newCursor >= totalSkus ? ' · CICLO COMPLETO ✓' : '';
-    Logger.log('✅ Barrido: ' + results.length + ' SKUs en ' + elapsed + 's · ' +
-               newCursor + '/' + totalSkus + ' (' + pct + '%)' + ciclo +
-               (errores ? ' · ' + errores + ' errores' : '') +
-               ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
-    logRun_('chunk', results.length, elapsed, newCursor + '/' + totalSkus + ' (' + pct + '%)');
 
-    return { processed: results.length, cursor: newCursor, total: totalSkus, elapsedSec: elapsed };
+    Logger.log('✅ Barrido: ' + hechos + ' SKUs en ' + elapsed + 's' +
+               (errores ? ' · ' + errores + ' errores' : '') +
+               '  →  cobertura ' + conDato + '/' + total + ' (' + pct + '%)' +
+               ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
+
+    logRun_('chunk', hechos, elapsed,
+            'cobertura ' + conDato + '/' + total + ' (' + pct + '%)' +
+            (sinPresupuesto ? ' · sin presupuesto' : ''));
+
+    return {
+      processed: hechos, errores: errores,
+      cubiertos: conDato, total: total, pct: pct,
+      elapsedSec: elapsed,
+    };
 
   } finally {
     lock.releaseLock();
@@ -231,24 +260,31 @@ function syncRegularChunk() {
 }
 
 /* ============================================================
-   Cursor del barrido
+   Barrido — sin cursor
+   ============================================================
+   El barrido ya no lleva posición: cada corrida busca las filas
+   que le faltan. Estas funciones quedan por compatibilidad.
    ============================================================ */
-function getInvCursor_() {
-  const v = PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_INV_CURSOR);
-  const n = Number(v);
-  return isNaN(n) ? 0 : n;
-}
-function setInvCursor_(n) {
-  PropertiesService.getScriptProperties().setProperty(WM_CONFIG.PROP_INV_CURSOR, String(n));
-}
-function resetInvCursor_() {
-  setInvCursor_(0);
-}
+function getInvCursor_() { return 0; }
 
-/** Fuerza que el barrido empiece de cero */
+/**
+ * Borra las cantidades de Inv_Normal para forzar un barrido completo.
+ * Los SKUs se conservan; solo se vacía el dato de inventario.
+ */
 function reiniciarBarrido() {
-  resetInvCursor_();
-  Logger.log('✅ Barrido reiniciado desde el SKU 0.');
+  const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) { Logger.log('Inv_Normal está vacía.'); return; }
+
+  const n = lastRow - 1;
+  const vacias = [];
+  for (let i = 0; i < n; i++) vacias.push(['', '', '']);
+  sh.getRange(2, 2, n, 3).setValues(vacias);
+  SpreadsheetApp.flush();
+  invalidateCache_();
+
+  Logger.log('✅ ' + n + ' SKUs marcados como pendientes.');
+  Logger.log('   El barrido los va a consultar de nuevo.');
 }
 
 /* ============================================================
@@ -321,18 +357,16 @@ function ensureRegularSheet_(skus) {
   const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
   const headers = ['sku', 'cantidad', 'unidad', 'revisadoEn'];
 
-  // Conserva lo ya barrido
+  // Conserva por SKU lo ya consultado. Si un SKU sigue existiendo,
+  // su cantidad y su fecha se mantienen aunque cambie de posición.
   const previo = {};
   const lastRow = sh.getLastRow();
-  const totalPrevio = Math.max(0, lastRow - 1);
-  let mismoOrden = (totalPrevio === skus.length);
 
   if (lastRow > 1) {
     const old = sh.getRange(2, 1, lastRow - 1, 4).getValues();
-    old.forEach(function(r, idx){
+    old.forEach(function(r){
       const s = String(r[0] || '').trim();
       if (s) previo[s] = [r[1], r[2], r[3]];
-      if (mismoOrden && s !== skus[idx]) mismoOrden = false;
     });
   }
 
@@ -346,8 +380,6 @@ function ensureRegularSheet_(skus) {
   SpreadsheetApp.flush();
   sh.getRange(1, 1, values.length, 4).setValues(values);
   SpreadsheetApp.flush();
-
-  return !mismoOrden;   // true = la lista cambió → reiniciar cursor
 }
 
 /* ============================================================
@@ -397,13 +429,10 @@ function loadRows_() {
     if (regular[s].invNormal !== '' && regular[s].invNormal !== undefined) conDato++;
   });
 
-  const cursor = getInvCursor_();
   const progress = {
     cubiertos: conDato,
     total: master.length,
     pctCobertura: master.length ? Math.round((conDato / master.length) * 100) : 0,
-    cursor: cursor,
-    pctPase: master.length ? Math.round((cursor / master.length) * 100) : 0,
   };
 
   const payload = { rows: rows, ts: Date.now(), progress: progress };
@@ -519,24 +548,34 @@ function verProgreso() {
   try {
     const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
     const total = Math.max(0, sh.getLastRow() - 1);
-    const cursor = getInvCursor_();
-    const pct = total ? ((cursor / total) * 100).toFixed(1) : '0';
 
-    let conDato = 0;
+    let conDato = 0, masViejo = null;
     if (total > 0) {
-      const vals = sh.getRange(2, 2, total, 1).getValues();
-      conDato = vals.filter(function(r){ return r[0] !== '' && r[0] !== null; }).length;
+      const vals = sh.getRange(2, 2, total, 3).getValues();
+      vals.forEach(function(r){
+        if (r[0] !== '' && r[0] !== null) {
+          conDato++;
+          if (r[2] instanceof Date && (!masViejo || r[2] < masViejo)) masViejo = r[2];
+        }
+      });
     }
+    const pct = total ? Math.round(conDato / total * 100) : 0;
+    const faltan = total - conDato;
+    const corridas = Math.ceil(faltan / WM_CONFIG.MAX_SKUS_POR_CHUNK);
 
     Logger.log('── PROGRESO DEL BARRIDO ──');
-    Logger.log('  Total de SKUs:      ' + total);
-    Logger.log('  Cursor actual:      ' + cursor + '  (' + pct + '%)');
-    Logger.log('  SKUs con inventario: ' + conDato);
-    Logger.log('  Endpoint WFS:       ' +
+    Logger.log('  Total de SKUs:       ' + total);
+    Logger.log('  Con dato:            ' + conDato + '  (' + pct + '%)');
+    Logger.log('  Pendientes:          ' + faltan);
+    if (faltan > 0) {
+      Logger.log('  Faltan ~' + corridas + ' corridas ≈ ' +
+                 (corridas * WM_CONFIG.CHUNK_INTERVAL_MIN / 60).toFixed(1) + ' horas');
+    } else {
+      Logger.log('  ✅ Cobertura completa. Ahora solo refresca los más viejos.');
+    }
+    if (masViejo) Logger.log('  Dato más viejo:      ' + masViejo.toLocaleString('es-MX'));
+    Logger.log('  Endpoint WFS:        ' +
       (PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_WFS_ENDPOINT) || 'sin detectar'));
-    const faltan = Math.max(0, total - cursor);
-    const corridas = Math.ceil(faltan / 280);
-    Logger.log('  Faltan ~' + corridas + ' corridas (~' + (corridas * WM_CONFIG.CHUNK_INTERVAL_MIN) + ' min)');
   } catch (e) {
     Logger.log('❌ ' + e.message);
   }

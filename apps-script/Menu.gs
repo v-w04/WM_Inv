@@ -136,10 +136,10 @@ function mnu_chunk() {
     dialogo_('Se saltó el lote', 'Motivo: ' + (r.reason || 'desconocido'));
     return;
   }
-  const pct = r.total ? Math.round(r.cursor / r.total * 100) : 0;
   dialogo_('✅ Lote listo',
-    r.processed + ' SKUs consultados en ' + r.elapsedSec + ' seg\n\n' +
-    'Posición del recorrido: ' + r.cursor + ' de ' + r.total + ' (' + pct + '%)\n' +
+    r.processed + ' SKUs consultados en ' + r.elapsedSec + ' seg' +
+    (r.errores ? '\n' + r.errores + ' con error (se reintentan en el siguiente lote)' : '') +
+    '\n\nCobertura: ' + r.cubiertos + ' de ' + r.total + '  (' + r.pct + '%)\n' +
     'Quedan ' + fetchRestantes_() + ' llamadas para hoy.');
 }
 
@@ -151,14 +151,16 @@ function mnu_progreso() {
   try {
     const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
     const total = Math.max(0, sh.getLastRow() - 1);
-    const cursor = getInvCursor_();
 
-    let conDato = 0;
+    let conDato = 0, masViejo = null;
     if (total > 0) {
-      const vals = sh.getRange(2, 2, total, 1).getValues();
-      for (let i = 0; i < vals.length; i++) {
-        if (vals[i][0] !== '' && vals[i][0] !== null) conDato++;
-      }
+      const vals = sh.getRange(2, 2, total, 3).getValues();
+      vals.forEach(function(r){
+        if (r[0] !== '' && r[0] !== null) {
+          conDato++;
+          if (r[2] instanceof Date && (!masViejo || r[2] < masViejo)) masViejo = r[2];
+        }
+      });
     }
     const pctCob = total ? Math.round(conDato / total * 100) : 0;
     const faltan = Math.max(0, total - conDato);
@@ -166,11 +168,12 @@ function mnu_progreso() {
     const horas = (lotes * WM_CONFIG.CHUNK_INTERVAL_MIN / 60).toFixed(1);
 
     dialogo_('📊 Avance del barrido',
-      'SKUs con dato de inventario:  ' + conDato + ' de ' + total + '  (' + pctCob + '%)\n' +
-      'Posición del recorrido:       ' + cursor + '\n\n' +
+      'SKUs con dato:  ' + conDato + ' de ' + total + '  (' + pctCob + '%)\n' +
+      'Pendientes:     ' + faltan + '\n\n' +
       (faltan > 0
-        ? 'Faltan ' + faltan + ' SKUs ≈ ' + lotes + ' lotes ≈ ' + horas + ' horas.'
-        : 'Cobertura completa. Los lotes ahora solo refrescan datos.') +
+        ? 'Faltan ≈ ' + lotes + ' lotes ≈ ' + horas + ' horas.'
+        : 'Cobertura completa. Los lotes ahora solo refrescan los datos más viejos.') +
+      (masViejo ? '\n\nDato más viejo: ' + masViejo.toLocaleString('es-MX') : '') +
       '\n\nEndpoint WFS: ' +
       (PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_WFS_ENDPOINT) || 'sin detectar'));
   } catch (e) {
@@ -327,13 +330,15 @@ function mnu_resetWfs() {
 function mnu_reiniciarBarrido() {
   const ui = SpreadsheetApp.getUi();
   const r = ui.alert('¿Reiniciar el barrido?',
-    'El recorrido del inventario propio vuelve al primer SKU.\n\n' +
-    'Los datos que ya tienes NO se borran — solo se van refrescando\n' +
-    'desde el principio.',
+    'Se BORRAN las cantidades de inventario propio y todos los SKUs\n' +
+    'quedan marcados como pendientes.\n\n' +
+    'Los SKUs no se pierden, pero el dashboard va a mostrar "—" en esa\n' +
+    'columna hasta que el barrido los vuelva a consultar (varias horas).\n\n' +
+    'Úsalo solo si sospechas que los datos están mal.',
     ui.ButtonSet.YES_NO);
   if (r !== ui.Button.YES) return;
   reiniciarBarrido();
-  aviso_('Barrido reiniciado desde el SKU 0.', 5);
+  aviso_('Todos los SKUs quedaron pendientes de consultar.', 6);
 }
 
 function mnu_reiniciarContador() {
