@@ -84,13 +84,21 @@ if "!GIT!"=="git" (
 )
 
 :GOTGIT
-for /f %%C in ('"!GIT!" status --porcelain 2^>nul ^| find /c /v ""') do set CAMBIOS=%%C
-if "!CAMBIOS!"=="0" (
-    echo  No hay cambios para GitHub.
-    goto FIN
+REM Contar con "for /f" + pipe se rompe cuando la ruta de git trae espacios
+REM (el git de GitHub Desktop). Mejor preguntarle a git directamente:
+REM diff-index devuelve 0 si NO hay cambios.
+"!GIT!" diff-index --quiet HEAD -- 2>nul
+if not errorlevel 1 (
+    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_nuevos.txt" 2>nul
+    for %%F in ("%TEMP%\wm_nuevos.txt") do if %%~zF EQU 0 (
+        del "%TEMP%\wm_nuevos.txt" >nul 2>&1
+        echo  No hay cambios para GitHub.
+        goto FIN
+    )
+    del "%TEMP%\wm_nuevos.txt" >nul 2>&1
 )
 
-echo  Archivos con cambios: !CAMBIOS!
+echo  Archivos con cambios:
 "!GIT!" status --short
 echo.
 

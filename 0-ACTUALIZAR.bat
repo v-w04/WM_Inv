@@ -30,11 +30,10 @@ if "!GIT!"=="git" (
 
 :GOTGIT
 echo  [1/2] Revisando si tienes cambios sin subir...
-for /f %%C in ('"!GIT!" status --porcelain 2^>nul ^| find /c /v ""') do set CAMBIOS=%%C
-
-if not "!CAMBIOS!"=="0" (
+"!GIT!" diff-index --quiet HEAD -- 2>nul
+if errorlevel 1 (
     echo.
-    echo  OJO: tienes !CAMBIOS! archivo^(s^) con cambios locales sin subir:
+    echo  OJO: tienes cambios locales sin subir:
     echo.
     "!GIT!" status --short
     echo.

@@ -54,15 +54,22 @@ echo  [1/5] Estado del repositorio
 if errorlevel 1 goto NOTREPO
 echo.
 
-for /f %%C in ('"!GIT!" status --porcelain 2^>nul ^| find /c /v ""') do set CAMBIOS=%%C
-if "!CAMBIOS!"=="0" (
-    echo  No hay cambios que subir. Todo esta al dia.
-    echo.
-    pause
-    exit /b 0
+REM diff-index devuelve 0 si NO hay cambios en archivos ya rastreados.
+REM (Contar con for/f + pipe truena si la ruta de git tiene espacios.)
+"!GIT!" diff-index --quiet HEAD -- 2>nul
+if not errorlevel 1 (
+    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_nuevos.txt" 2>nul
+    for %%F in ("%TEMP%\wm_nuevos.txt") do if %%~zF EQU 0 (
+        del "%TEMP%\wm_nuevos.txt" >nul 2>&1
+        echo  No hay cambios que subir. Todo esta al dia.
+        echo.
+        pause
+        exit /b 0
+    )
+    del "%TEMP%\wm_nuevos.txt" >nul 2>&1
 )
 
-echo  [2/5] Archivos con cambios: !CAMBIOS!
+echo  [2/5] Preparando commit
 echo.
 set "MSG="
 set /p "MSG=  Mensaje del commit [Enter para uno automatico]: "
