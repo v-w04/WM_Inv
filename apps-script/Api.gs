@@ -7,6 +7,65 @@
  *  y autodetección del endpoint de WFS (nuevo vs legacy).
  */
 
+/* ==============================================================
+   PRESUPUESTO DIARIO DE LLAMADAS HTTP
+
+   Apps Script permite 20,000 UrlFetch por día en cuentas Gmail.
+   Al agotarse, TODO el script muere hasta la medianoche — no solo
+   el proceso que se pasó. Por eso llevamos la cuenta nosotros y
+   frenamos antes, dejando margen para que el dashboard siga
+   respondiendo aunque los triggers ya se hayan gastado lo suyo.
+   ============================================================== */
+
+/** Suma 1 al contador del día. Devuelve false si ya no hay presupuesto. */
+function gastarFetch_() {
+  const props = PropertiesService.getScriptProperties();
+  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+  const dia = props.getProperty(WM_CONFIG.PROP_FETCH_DATE);
+
+  let n = 0;
+  if (dia === hoy) {
+    n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
+  } else {
+    // Día nuevo: se reinicia
+    props.setProperty(WM_CONFIG.PROP_FETCH_DATE, hoy);
+  }
+
+  if (n >= WM_CONFIG.DAILY_FETCH_BUDGET) return false;
+
+  props.setProperty(WM_CONFIG.PROP_FETCH_COUNT, String(n + 1));
+  return true;
+}
+
+/** Cuántas llamadas quedan hoy */
+function fetchRestantes_() {
+  const props = PropertiesService.getScriptProperties();
+  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+  if (props.getProperty(WM_CONFIG.PROP_FETCH_DATE) !== hoy) return WM_CONFIG.DAILY_FETCH_BUDGET;
+  const n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
+  return Math.max(0, WM_CONFIG.DAILY_FETCH_BUDGET - n);
+}
+
+/** Diagnóstico: cómo va el consumo de hoy */
+function verConsumo() {
+  const restan = fetchRestantes_();
+  const usadas = WM_CONFIG.DAILY_FETCH_BUDGET - restan;
+  Logger.log('── CONSUMO DE HOY ──');
+  Logger.log('  Usadas:      ' + usadas + ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
+  Logger.log('  Restantes:   ' + restan);
+  Logger.log('  Cuota Google: 20,000 (nuestro tope es más bajo a propósito)');
+  if (restan < 2000) Logger.log('  ⚠ Queda poco. Los triggers van a empezar a saltarse.');
+  return { usadas: usadas, restantes: restan };
+}
+
+/** Reinicia el contador a mano. Úsalo solo si sabes que Google ya lo reseteó. */
+function reiniciarContadorFetch() {
+  const props = PropertiesService.getScriptProperties();
+  props.deleteProperty(WM_CONFIG.PROP_FETCH_COUNT);
+  props.deleteProperty(WM_CONFIG.PROP_FETCH_DATE);
+  Logger.log('✅ Contador reiniciado.');
+}
+
 function wmHeaders_() {
   return {
     'WM_SEC.ACCESS_TOKEN':   getAccessToken(),
@@ -43,6 +102,12 @@ function wmGet_(path, params, opts) {
   let lastErr = null;
 
   for (let attempt = 0; attempt <= WM_CONFIG.MAX_RETRIES; attempt++) {
+    if (!gastarFetch_()) {
+      const err = new Error('Presupuesto diario de llamadas agotado (' +
+                            WM_CONFIG.DAILY_FETCH_BUDGET + '). Se reinicia mañana.');
+      err.sinPresupuesto = true;
+      throw err;
+    }
     let resp;
     try {
       resp = UrlFetchApp.fetch(url, {
@@ -443,6 +508,9 @@ function categoriaDeShelf_(ruta, productType) {
  * Un SKU que falla se marca y se reintenta en el siguiente ciclo.
  */
 function getInventoryForSku(sku) {
+  if (!gastarFetch_()) {
+    return { ok: false, qty: '', unit: '', code: 'SIN_PRESUPUESTO', sinPresupuesto: true };
+  }
   const url = getBaseUrl() + '/v3/inventory' + toQs_({ sku: sku });
   try {
     const resp = UrlFetchApp.fetch(url, {
@@ -461,6 +529,7 @@ function getInventoryForSku(sku) {
     // 401: el token venció. Lo refrescamos y damos UN solo reintento.
     if (code === 401) {
       CacheService.getScriptCache().remove(WM_CONFIG.CACHE_TOKEN);
+      if (!gastarFetch_()) return { ok: false, qty: '', unit: '', code: 'SIN_PRESUPUESTO', sinPresupuesto: true };
       const r2 = UrlFetchApp.fetch(url, {
         method: 'get', headers: wmHeaders_(), muteHttpExceptions: true,
       });

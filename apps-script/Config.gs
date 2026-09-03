@@ -46,12 +46,26 @@ const WM_CONFIG = {
   SESSION_TTL_SECONDS: 43200,   // sesión web = 12 h
 
   // ------- Triggers -------
-  REFRESH_INTERVAL_MIN: 10,   // catálogo + WFS
-  CHUNK_INTERVAL_MIN:   5,    // barrido de inventario normal
+  // Calibrado contra la CUOTA DIARIA de UrlFetch (20,000 en cuentas Gmail).
+  //
+  //   syncMain        96 corridas/día × ~70 llamadas =  6,720
+  //   syncRegularChunk 48 corridas/día × ~70 SKUs    =  3,360
+  //                                          TOTAL   = 10,080  ← mitad de la cuota
+  //
+  // Antes esto estaba en 10 y 5 min, lo que daba ~82,000 llamadas/día
+  // y tumbaba el servicio a media mañana.
+  REFRESH_INTERVAL_MIN: 15,   // catálogo + WFS
+  CHUNK_INTERVAL_MIN:   30,   // barrido de inventario normal
+
+  // ------- Presupuesto de llamadas HTTP -------
+  DAILY_FETCH_BUDGET:  17000,  // tope propio, por debajo de los 20,000 de Google
+  MAX_SKUS_POR_CHUNK:  80,     // techo por corrida, además del límite de tiempo
+  PROP_FETCH_COUNT:    'FETCH_COUNT',
+  PROP_FETCH_DATE:     'FETCH_DATE',
 
   // ------- Presupuestos de tiempo (Apps Script mata a los 6 min = 360s) -------
   BUDGET_MAIN_MS:  240000,   // 4 min para catálogo + WFS (medido: ~95 seg)
-  BUDGET_CHUNK_MS: 180000,   // 3 min para el barrido — deja hueco para syncMain
+  BUDGET_CHUNK_MS: 120000,   // 2 min para el barrido — el tope real es MAX_SKUS_POR_CHUNK
 
   // ------- Pacing (rate limit: 300 TPM) -------
   PAGE_PACING_MS: 220,   // entre páginas de catálogo/WFS

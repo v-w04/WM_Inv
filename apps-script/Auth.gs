@@ -49,6 +49,11 @@ function getAccessToken() {
   const basic = Utilities.base64Encode(clientId + ':' + clientSecret);
   const url = getBaseUrl() + '/v3/token';
 
+  if (!gastarFetch_()) {
+    throw new Error('Presupuesto diario de llamadas agotado. Se reinicia mañana. ' +
+                    'Corre verConsumo() para ver el detalle.');
+  }
+
   const resp = UrlFetchApp.fetch(url, {
     method: 'post',
     headers: {

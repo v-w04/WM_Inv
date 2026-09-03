@@ -26,7 +26,16 @@ function syncMain() {
   try {
     const t0 = Date.now();
     const deadline = t0 + WM_CONFIG.BUDGET_MAIN_MS;
-    Logger.log('▶ syncMain arrancando...');
+
+    // Un syncMain completo cuesta ~70 llamadas. Si no alcanza, mejor no
+    // empezar: dejaría el catálogo a medias y gastaría lo que queda.
+    const restan = fetchRestantes_();
+    if (restan < 120) {
+      Logger.log('⏭ syncMain: solo quedan ' + restan + ' llamadas hoy. Se salta.');
+      return { skipped: true, reason: 'sin presupuesto' };
+    }
+
+    Logger.log('▶ syncMain arrancando... (' + restan + ' llamadas disponibles hoy)');
 
     // WFS primero (rápido: 3 páginas)
     const wfsList = getAllWfsInventory();
@@ -136,18 +145,32 @@ function syncRegularChunk() {
 
     Logger.log('▶ Barrido inv. normal desde ' + cursor + ' / ' + totalSkus);
 
+    // Tope por corrida: el que se alcance primero entre tiempo,
+    // número de SKUs, y presupuesto diario de llamadas.
+    const restan = fetchRestantes_();
+    const tope = Math.min(WM_CONFIG.MAX_SKUS_POR_CHUNK, Math.max(0, restan - 100));
+    if (tope <= 0) {
+      Logger.log('⏭ Barrido: sin presupuesto de llamadas hoy (' + restan + ' restantes).');
+      return { skipped: true, reason: 'sin presupuesto' };
+    }
+
     const results = [];
     let errores = 0;
     let fallosSeguidos = 0;
     let throttled = false;
 
-    for (let i = 0; i < skus.length; i++) {
+    for (let i = 0; i < skus.length && results.length < tope; i++) {
       if (Date.now() > deadline) break;
 
       const sku = String(skus[i][0] || '').trim();
       if (!sku) { results.push(['', '', '', '']); continue; }
 
       const inv = getInventoryForSku(sku);
+
+      if (inv.sinPresupuesto) {
+        Logger.log('  ⏹ Presupuesto agotado a media corrida. Se guarda el avance.');
+        break;
+      }
 
       if (inv.ok) {
         fallosSeguidos = 0;
@@ -188,7 +211,8 @@ function syncRegularChunk() {
     const ciclo = newCursor >= totalSkus ? ' · CICLO COMPLETO ✓' : '';
     Logger.log('✅ Barrido: ' + results.length + ' SKUs en ' + elapsed + 's · ' +
                newCursor + '/' + totalSkus + ' (' + pct + '%)' + ciclo +
-               (errores ? ' · ' + errores + ' errores' : ''));
+               (errores ? ' · ' + errores + ' errores' : '') +
+               ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
     logRun_('chunk', results.length, elapsed, newCursor + '/' + totalSkus + ' (' + pct + '%)');
 
     return { processed: results.length, cursor: newCursor, total: totalSkus, elapsedSec: elapsed };

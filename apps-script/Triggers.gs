@@ -20,15 +20,29 @@ function instalarTriggers() {
     .everyMinutes(WM_CONFIG.CHUNK_INTERVAL_MIN)
     .create();
 
+  const corridasMain  = Math.floor(1440 / WM_CONFIG.REFRESH_INTERVAL_MIN);
+  const corridasChunk = Math.floor(1440 / WM_CONFIG.CHUNK_INTERVAL_MIN);
+  const costoMain  = corridasMain * 70;
+  const costoChunk = corridasChunk * WM_CONFIG.MAX_SKUS_POR_CHUNK;
+
   Logger.log('✅ Triggers instalados:');
-  Logger.log('   · syncMain          cada ' + WM_CONFIG.REFRESH_INTERVAL_MIN + ' min  (~78 seg por corrida)');
-  Logger.log('   · syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min  (~340 SKUs por corrida)');
+  Logger.log('   · syncMain          cada ' + WM_CONFIG.REFRESH_INTERVAL_MIN + ' min');
+  Logger.log('   · syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min');
   Logger.log('');
-  Logger.log('   Medido en esta cuenta: 0.71 seg por SKU.');
-  Logger.log('   Barrido completo de 3,271 SKUs ≈ 10 corridas ≈ 50 minutos.');
-  Logger.log('   Después se mantiene solo, reiniciando el ciclo.');
+  Logger.log('── PRESUPUESTO DIARIO DE LLAMADAS ──');
+  Logger.log('   syncMain:   ' + corridasMain + ' corridas × ~70  = ' + costoMain);
+  Logger.log('   chunk:      ' + corridasChunk + ' corridas × ' + WM_CONFIG.MAX_SKUS_POR_CHUNK + '  = ' + costoChunk);
+  Logger.log('   TOTAL:      ' + (costoMain + costoChunk) +
+             ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET + ' presupuestadas');
+  Logger.log('   (cuota real de Google: 20,000/día)');
   Logger.log('');
-  Logger.log('   Usa verProgreso() para checar el avance.');
+  const cicloHoras = ((3275 / WM_CONFIG.MAX_SKUS_POR_CHUNK) * WM_CONFIG.CHUNK_INTERVAL_MIN / 60).toFixed(1);
+  Logger.log('   Ciclo completo de inventario propio ≈ ' + cicloHoras + ' horas.');
+  Logger.log('   Más lento que antes, pero sostenible: la versión anterior');
+  Logger.log('   gastaba ~82,000 llamadas/día y tumbaba el servicio.');
+  Logger.log('');
+  Logger.log('   verProgreso() → avance del barrido');
+  Logger.log('   verConsumo()  → llamadas usadas hoy');
 }
 
 function quitarTriggers() {
