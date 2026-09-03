@@ -88,8 +88,16 @@ function testAuth() {
 /* ================ PASSWORD DEL DASHBOARD ================ */
 
 /**
- * Ejecuta UNA vez. Edita la constante PASSWORD abajo con la que quieres,
- * córrela, y luego bórrala del código. Queda hasheada en PropertiesService.
+ * ⚠️ SOLO DESDE EL EDITOR DE APPS SCRIPT.
+ *
+ * Esto NO está en el menú del Sheet a propósito: ese menú lo ve cualquiera
+ * con permiso de edición en la hoja, y cambiar la contraseña del dashboard
+ * exige un permiso más alto. Correr una función desde el editor requiere
+ * acceso al script, que es el nivel correcto.
+ *
+ * Edita PASSWORD, corre la función UNA vez, y regresa el placeholder.
+ * Los .bat de subida se niegan a hacer commit si detectan que quedó un
+ * valor real aquí.
  */
 function setupDashboardPassword() {
   const PASSWORD = 'PON_TU_PASSWORD_AQUI';   // ← edita, corre, borra

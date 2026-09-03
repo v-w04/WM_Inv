@@ -58,10 +58,11 @@ function onOpenMenu(e) {
 
     .addSeparator()
 
-    .addSubMenu(ui.createMenu('🔑 Credenciales')
-      .addItem('Credenciales de Walmart…',          'mnu_dlgCredenciales')
-      .addItem('Contraseña del dashboard…',         'mnu_dlgPassword'))
-
+    // ⚠️ NO poner aquí nada que toque credenciales ni la contraseña del
+    // dashboard. Este menú lo ve cualquiera con permiso de edición en la
+    // hoja, que es un permiso mucho más repartido que el de administrar
+    // accesos. Esas funciones viven en Auth.gs y solo se corren desde el
+    // editor de Apps Script, que exige permiso sobre el script.
     .addSubMenu(ui.createMenu('⚙️ Configuración')
       .addItem('Instalar / reinstalar triggers',    'mnu_instalarTriggers')
       .addItem('Quitar triggers',                   'mnu_quitarTriggers')
@@ -268,118 +269,6 @@ function mostrarTexto_(titulo, texto) {
     }) + '</div>'
   ).setWidth(720).setHeight(560);
   SpreadsheetApp.getUi().showModalDialog(html, titulo);
-}
-
-/* ============================================================
-   Credenciales — por diálogo, no por código
-   ============================================================ */
-
-function mnu_dlgCredenciales() {
-  const props = PropertiesService.getScriptProperties();
-  const yaHay = !!props.getProperty(WM_CONFIG.PROP_CLIENT_ID);
-
-  const html = HtmlService.createHtmlOutput(
-    '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:18px">' +
-    '<h3 style="margin:0 0 4px">Credenciales de Walmart</h3>' +
-    '<p style="color:#666;font-size:12px;margin:0 0 16px">' +
-    (yaHay ? 'Ya hay credenciales guardadas. Si escribes nuevas, las reemplazan.'
-           : 'Todavía no hay credenciales guardadas.') +
-    '</p>' +
-
-    '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Client ID</label>' +
-    '<input id="cid" style="width:100%;padding:7px;font-family:monospace;font-size:12px;' +
-    'border:1px solid #ccc;border-radius:4px;box-sizing:border-box">' +
-
-    '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px">Client Secret</label>' +
-    '<input id="csec" type="password" style="width:100%;padding:7px;font-family:monospace;' +
-    'font-size:12px;border:1px solid #ccc;border-radius:4px;box-sizing:border-box">' +
-
-    '<div style="background:#e8f0fe;border-left:3px solid #1a73e8;padding:9px 11px;' +
-    'margin:16px 0;font-size:11px;color:#333;line-height:1.5">' +
-    'Se guardan cifradas en PropertiesService. No pasan por el código ni por el repo, ' +
-    'así que no hay riesgo de que terminen en GitHub.' +
-    '</div>' +
-
-    '<button onclick="guardar()" style="background:#1a73e8;color:#fff;border:none;' +
-    'padding:9px 18px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500">' +
-    'Guardar</button>' +
-    '<span id="msg" style="margin-left:12px;font-size:12px"></span>' +
-
-    '<script>' +
-    'function guardar(){' +
-    'var a=document.getElementById("cid").value.trim();' +
-    'var b=document.getElementById("csec").value.trim();' +
-    'var m=document.getElementById("msg");' +
-    'if(!a||!b){m.style.color="#c00";m.textContent="Faltan datos.";return;}' +
-    'm.style.color="#666";m.textContent="Guardando…";' +
-    'google.script.run.withSuccessHandler(function(){' +
-    'm.style.color="#0a0";m.textContent="Listo. Cerrando…";' +
-    'setTimeout(google.script.host.close,900);})' +
-    '.withFailureHandler(function(e){m.style.color="#c00";m.textContent=e.message;})' +
-    '.saveCredentials_(a,b);}' +
-    '</script></div>'
-  ).setWidth(460).setHeight(400);
-
-  SpreadsheetApp.getUi().showModalDialog(html, 'Credenciales de Walmart');
-}
-
-function mnu_dlgPassword() {
-  const yaHay = !!PropertiesService.getScriptProperties()
-                    .getProperty(WM_CONFIG.PROP_DASH_PASSWORD);
-
-  const html = HtmlService.createHtmlOutput(
-    '<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:18px">' +
-    '<h3 style="margin:0 0 4px">Contraseña del dashboard</h3>' +
-    '<p style="color:#666;font-size:12px;margin:0 0 16px">' +
-    (yaHay ? 'Ya hay una configurada. Si escribes otra, la reemplaza y todas las sesiones abiertas se cierran.'
-           : 'Todavía no hay contraseña. Sin ella el dashboard no deja entrar a nadie.') +
-    '</p>' +
-
-    '<label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Nueva contraseña</label>' +
-    '<input id="p1" type="password" style="width:100%;padding:7px;font-size:13px;' +
-    'border:1px solid #ccc;border-radius:4px;box-sizing:border-box">' +
-
-    '<label style="display:block;font-size:12px;font-weight:600;margin:12px 0 4px">Repítela</label>' +
-    '<input id="p2" type="password" style="width:100%;padding:7px;font-size:13px;' +
-    'border:1px solid #ccc;border-radius:4px;box-sizing:border-box">' +
-
-    '<div style="background:#fef7e0;border-left:3px solid #f9ab00;padding:9px 11px;' +
-    'margin:16px 0;font-size:11px;color:#333;line-height:1.5">' +
-    'Cuatro palabras sin relación entre sí resisten mucho más que símbolos raros, ' +
-    'y se recuerdan mejor. Evita el nombre de la empresa, años o cualquier cosa ' +
-    'adivinable: el dashboard está en internet abierto.' +
-    '</div>' +
-
-    '<button onclick="guardar()" style="background:#1a73e8;color:#fff;border:none;' +
-    'padding:9px 18px;border-radius:4px;cursor:pointer;font-size:13px;font-weight:500">' +
-    'Guardar</button>' +
-    '<span id="msg" style="margin-left:12px;font-size:12px"></span>' +
-
-    '<script>' +
-    'function guardar(){' +
-    'var a=document.getElementById("p1").value;' +
-    'var b=document.getElementById("p2").value;' +
-    'var m=document.getElementById("msg");' +
-    'if(a.length<8){m.style.color="#c00";m.textContent="Mínimo 8 caracteres.";return;}' +
-    'if(a!==b){m.style.color="#c00";m.textContent="No coinciden.";return;}' +
-    'm.style.color="#666";m.textContent="Guardando…";' +
-    'google.script.run.withSuccessHandler(function(){' +
-    'm.style.color="#0a0";m.textContent="Listo. Cerrando…";' +
-    'setTimeout(google.script.host.close,900);})' +
-    '.withFailureHandler(function(e){m.style.color="#c00";m.textContent=e.message;})' +
-    '.guardarPasswordWeb_(a);}' +
-    '</script></div>'
-  ).setWidth(460).setHeight(420);
-
-  SpreadsheetApp.getUi().showModalDialog(html, 'Contraseña del dashboard');
-}
-
-/** Llamada desde el diálogo. Guarda solo el hash. */
-function guardarPasswordWeb_(pw) {
-  if (!pw || String(pw).length < 8) throw new Error('Mínimo 8 caracteres.');
-  PropertiesService.getScriptProperties()
-    .setProperty(WM_CONFIG.PROP_DASH_PASSWORD, sha256_(String(pw)));
-  return 'OK';
 }
 
 /* ============================================================
