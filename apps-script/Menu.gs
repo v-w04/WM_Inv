@@ -51,6 +51,8 @@ function onOpenMenu(e) {
       .addItem('Triggers activos',                  'mnu_triggers'))
 
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
+      .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
+      .addSeparator()
       .addItem('Probar conexión al Sheet',          'mnu_testSheet')
       .addItem('Probar login con Walmart',          'mnu_testAuth')
       .addItem('Probar todos los endpoints',        'mnu_diagEndpoints')
@@ -211,6 +213,15 @@ function mnu_triggers() {
 /* ============================================================
    Diagnóstico
    ============================================================ */
+
+function mnu_porQueNoCorre() {
+  aviso_('Revisando qué está frenando…', 10);
+  try {
+    mostrarTexto_('¿Por qué no está corriendo?', porQueNoCorre());
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
 
 function mnu_testSheet() {
   try {

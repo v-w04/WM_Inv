@@ -27,6 +27,15 @@ function syncMain() {
     const t0 = Date.now();
     const deadline = t0 + WM_CONFIG.BUDGET_MAIN_MS;
 
+    // Marca el turno AL EMPEZAR, no al terminar.
+    //
+    // Si se marca solo cuando termina bien y syncMain falla (cuota, red),
+    // nunca queda registro de que corrió. El barrido entonces cree que
+    // syncMain lleva horas esperando turno y cede indefinidamente:
+    // los dos se quedan bloqueados y no corre ninguno.
+    PropertiesService.getScriptProperties()
+      .setProperty(WM_CONFIG.PROP_LAST_MAIN, String(Date.now()));
+
     // Un syncMain completo cuesta ~70 llamadas. Si no alcanza, mejor no
     // empezar: dejaría el catálogo a medias y gastaría lo que queda.
     const restan = fetchRestantes_();
@@ -88,7 +97,6 @@ function syncMain() {
       resetInvCursor_();
       Logger.log('  ℹ La lista de SKUs cambió — barrido reiniciado.');
     }
-    PropertiesService.getScriptProperties().setProperty(WM_CONFIG.PROP_LAST_MAIN, String(Date.now()));
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);

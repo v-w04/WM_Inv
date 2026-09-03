@@ -215,6 +215,135 @@ function pad_(s, n) {
 }
 
 /* ============================================================
+   ¿POR QUÉ NO ESTÁ CORRIENDO?
+   Revisa todo lo que puede estar frenando la sincronización
+   y dice qué hacer en cada caso.
+   ============================================================ */
+function porQueNoCorre() {
+  const props = PropertiesService.getScriptProperties();
+  const L = [];
+  const p = function(s){ L.push(s); Logger.log(s); };
+
+  p('══════════════════════════════════════════════════');
+  p(' ¿POR QUÉ NO CORRE? — ' + new Date().toLocaleString('es-MX'));
+  p('══════════════════════════════════════════════════');
+  p('');
+
+  let culpable = null;
+
+  /* 1 · Triggers */
+  p('── 1. Triggers instalados ──');
+  const ts = ScriptApp.getProjectTriggers();
+  const nombres = ts.map(function(t){ return t.getHandlerFunction(); });
+  p('   ' + (nombres.length ? nombres.join(', ') : 'NINGUNO'));
+  if (nombres.indexOf('syncMain') < 0) {
+    p('   ❌ Falta syncMain. Corre instalarTriggers().');
+    culpable = culpable || 'sin triggers';
+  } else {
+    p('   ✅ syncMain está instalado');
+  }
+  p('');
+
+  /* 2 · El candado del turno */
+  p('── 2. Candado entre procesos ──');
+  const lastMain = Number(props.getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+  if (!lastMain) {
+    p('   ⚠ syncMain nunca ha registrado una corrida.');
+    p('     El barrido va a ceder el turno indefinidamente.');
+    culpable = culpable || 'syncMain nunca completó';
+  } else {
+    const mins = Math.round((Date.now() - lastMain) / 60000);
+    p('   Último turno de syncMain: hace ' + mins + ' min');
+    if (mins > 60) {
+      p('   ⚠ Lleva más de una hora sin correr.');
+      culpable = culpable || 'syncMain lleva ' + mins + ' min sin correr';
+    } else {
+      p('   ✅ Dentro de lo normal');
+    }
+  }
+  p('');
+
+  /* 3 · Presupuesto propio */
+  p('── 3. Presupuesto de llamadas (nuestro contador) ──');
+  const restan = fetchRestantes_();
+  const usadas = WM_CONFIG.DAILY_FETCH_BUDGET - restan;
+  p('   Usadas hoy:  ' + usadas + ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
+  p('   Restantes:   ' + restan);
+  if (restan < 120) {
+    p('   ❌ Sin presupuesto propio. syncMain se salta las corridas.');
+    culpable = culpable || 'presupuesto propio agotado';
+  } else {
+    p('   ✅ Hay presupuesto');
+  }
+  p('');
+
+  /* 4 · La cuota real de Google */
+  p('── 4. Cuota real de Google (la prueba de fuego) ──');
+  try {
+    const t = getAccessToken();
+    p('   ✅ Una llamada real funcionó. Token: ' + t.substring(0, 18) + '…');
+    p('      La cuota de Google NO está agotada.');
+  } catch (e) {
+    const m = String(e.message || e);
+    p('   ❌ ' + m.substring(0, 180));
+    if (m.indexOf('too many times') >= 0 || m.indexOf('demasiadas veces') >= 0) {
+      p('');
+      p('      La cuota diaria de Google sigue agotada.');
+      p('      No hay nada que hacer en el código — se reinicia sola.');
+      p('      Google la reinicia por la madrugada, hora del Pacífico');
+      p('      (entre 1 y 3 de la mañana en México).');
+      culpable = 'cuota de Google agotada';
+    } else {
+      culpable = culpable || 'falla de autenticación';
+    }
+  }
+  p('');
+
+  /* 5 · Estado de los datos */
+  p('── 5. Datos en el Sheet ──');
+  try {
+    const ss = getSpreadsheet_();
+    const inv = ss.getSheetByName(WM_CONFIG.SHEET_MASTER);
+    const reg = ss.getSheetByName(WM_CONFIG.SHEET_REGULAR);
+    p('   Inventario:  ' + (inv ? Math.max(0, inv.getLastRow() - 1) + ' filas' : 'no existe'));
+    p('   Inv_Normal:  ' + (reg ? Math.max(0, reg.getLastRow() - 1) + ' filas' : 'no existe'));
+    p('   Cursor del barrido: ' + getInvCursor_());
+  } catch (e) {
+    p('   ❌ ' + e.message);
+  }
+  p('');
+
+  /* Veredicto */
+  p('══════════════════════════════════════════════════');
+  if (!culpable) {
+    p(' ✅ TODO EN ORDEN');
+    p('');
+    p(' No encuentro nada bloqueando. Si aun así no ves');
+    p(' movimiento, corre syncMain a mano desde el menú');
+    p(' y observa qué pasa.');
+  } else {
+    p(' 🔴 CAUSA: ' + culpable);
+    p('');
+    if (culpable.indexOf('cuota de Google') >= 0) {
+      p(' QUÉ HACER: esperar. Se reinicia en la madrugada.');
+      p(' Mientras tanto el dashboard sigue mostrando los');
+      p(' últimos datos que alcanzó a guardar.');
+    } else if (culpable.indexOf('presupuesto propio') >= 0) {
+      p(' QUÉ HACER: si la cuota de Google ya se reinició,');
+      p(' usa el menú → Configuración → Reiniciar contador.');
+    } else if (culpable.indexOf('nunca completó') >= 0 || culpable.indexOf('sin correr') >= 0) {
+      p(' QUÉ HACER: corre syncMain a mano desde el menú.');
+      p(' Con que termine bien una vez, se destraba el barrido.');
+    } else if (culpable.indexOf('sin triggers') >= 0) {
+      p(' QUÉ HACER: menú → Configuración → Instalar triggers.');
+    }
+  }
+  p('══════════════════════════════════════════════════');
+
+  return L.join('\n');
+}
+
+/* ============================================================
    DIAGNÓSTICO DE PAGINACIÓN DEL CATÁLOGO
    Corre esta función si el catálogo se queda en 50 items.
    ============================================================ */
