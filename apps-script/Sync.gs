@@ -376,8 +376,15 @@ function ensureRegularSheet_(skus) {
   }));
 
   // Igual que arriba: solo datos, sin tocar el formato de la hoja.
+  // La única excepción es la columna A como texto: hay SKUs que son
+  // puros dígitos y Sheets los convierte a número, perdiendo ceros
+  // iniciales — y entonces la consulta a Walmart falla.
   sh.clearContents();
   SpreadsheetApp.flush();
+
+  const colSku = sh.getRange(1, 1, Math.max(values.length, 2), 1);
+  if (colSku.getNumberFormat() !== '@') colSku.setNumberFormat('@');
+
   sh.getRange(1, 1, values.length, 4).setValues(values);
   SpreadsheetApp.flush();
 }

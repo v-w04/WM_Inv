@@ -52,6 +52,7 @@ function onOpenMenu(e) {
 
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
       .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
+      .addItem('SKUs sin dato de inventario',        'mnu_sinDato')
       .addSeparator()
       .addItem('Probar conexión al Sheet',          'mnu_testSheet')
       .addItem('Probar login con Walmart',          'mnu_testAuth')
@@ -221,6 +222,15 @@ function mnu_porQueNoCorre() {
   aviso_('Revisando qué está frenando…', 10);
   try {
     mostrarTexto_('¿Por qué no está corriendo?', porQueNoCorre());
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
+
+function mnu_sinDato() {
+  aviso_('Revisando cuáles no tienen dato…', 10);
+  try {
+    mostrarTexto_('SKUs sin dato de inventario', verSkusSinDato());
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }

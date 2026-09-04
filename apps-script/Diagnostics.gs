@@ -378,6 +378,92 @@ function porQueNoCorre() {
 }
 
 /* ============================================================
+   ¿POR QUÉ ESTOS SKUs NO TIENEN INVENTARIO?
+   Lista los que quedaron sin dato y prueba unos cuantos en vivo
+   para ver qué contesta Walmart.
+   ============================================================ */
+function verSkusSinDato() {
+  const L = [];
+  const p = function(s){ L.push(s); Logger.log(s); };
+
+  p('══════════════════════════════════════════════════');
+  p(' SKUs SIN DATO DE INVENTARIO PROPIO');
+  p('══════════════════════════════════════════════════');
+  p('');
+
+  const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+  const total = Math.max(0, sh.getLastRow() - 1);
+  if (!total) { p('Inv_Normal está vacía.'); return L.join('\n'); }
+
+  const datos = sh.getRange(2, 1, total, 4).getValues();
+  const sinDato = [];
+  datos.forEach(function(r){
+    const sku = String(r[0] || '').trim();
+    if (sku && (r[1] === '' || r[1] === null)) sinDato.push(sku);
+  });
+
+  p('   Sin dato: ' + sinDato.length + ' de ' + total +
+    '  (' + (sinDato.length / total * 100).toFixed(1) + '%)');
+  p('');
+
+  if (!sinDato.length) {
+    p('   ✅ Todos tienen dato. Nada que revisar.');
+    return L.join('\n');
+  }
+
+  /* ¿Alguno se ve como número en vez de SKU? */
+  const numericos = sinDato.filter(function(s){ return /^\d+(\.\d+)?$/.test(s); });
+  if (numericos.length) {
+    p('── SKUs que parecen números ──');
+    p('   ' + numericos.length + ' de ellos son puros dígitos. Suele ser un');
+    p('   código de barras que se coló, o un SKU al que Sheets le comió');
+    p('   los ceros iniciales al guardarlo como número.');
+    numericos.slice(0, 12).forEach(function(s){ p('     ' + s); });
+    p('');
+  }
+
+  /* Probar en vivo unos cuantos */
+  const muestra = sinDato.slice(0, 8);
+  p('── Probando ' + muestra.length + ' en vivo contra Walmart ──');
+  p('');
+  const razones = {};
+
+  muestra.forEach(function(sku){
+    const inv = getInventoryForSku(sku);
+    if (inv.ok) {
+      p('   ✅ ' + sku);
+      p('      Ahora sí respondió: ' + inv.qty + ' ' + inv.unit);
+      p('      (fue un fallo pasajero — el barrido lo va a levantar solo)');
+      razones['pasajero'] = (razones['pasajero'] || 0) + 1;
+    } else {
+      p('   ❌ ' + sku);
+      p('      HTTP ' + inv.code);
+      razones['HTTP ' + inv.code] = (razones['HTTP ' + inv.code] || 0) + 1;
+    }
+    Utilities.sleep(300);
+  });
+
+  p('');
+  p('══════════════════════════════════════════════════');
+  p(' RESUMEN DE LA MUESTRA');
+  p('══════════════════════════════════════════════════');
+  Object.keys(razones).forEach(function(k){
+    p('   ' + k + ': ' + razones[k]);
+  });
+  p('');
+  p(' Cómo leerlo:');
+  p('   · "pasajero"  → red o timeout. Se arregla solo.');
+  p('   · HTTP 404    → el SKU está en el catálogo pero no en el');
+  p('                   endpoint de inventario. Suele pasar con');
+  p('                   productos archivados o mal dados de alta.');
+  p('   · HTTP 429    → Walmart nos está frenando. Bajar el ritmo.');
+  p('   · HTTP 400    → el SKU tiene un formato que Walmart rechaza');
+  p('                   (por ejemplo, si perdió ceros iniciales).');
+
+  return L.join('\n');
+}
+
+/* ============================================================
    DIAGNÓSTICO DE PAGINACIÓN DEL CATÁLOGO
    Corre esta función si el catálogo se queda en 50 items.
    ============================================================ */
