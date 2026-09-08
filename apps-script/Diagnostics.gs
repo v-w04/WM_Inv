@@ -606,3 +606,85 @@ function diagnosticarPaginacion() {
   Logger.log('');
   Logger.log('👉 Copia TODO este log y pásamelo.');
 }
+
+/* ============================================================
+   ¿HAY UN REPORTE MASIVO DE INVENTARIO?
+
+   Hoy el barrido gasta 1 llamada POR SKU: 3,341 llamadas para
+   recorrer el catálogo completo, y por eso el ciclo tarda horas.
+
+   Walmart tiene APIs de reportes que devuelven TODO el inventario
+   en un solo archivo. Si alguna está habilitada en esta cuenta,
+   el barrido entero se puede reemplazar por 2 o 3 llamadas.
+
+   Esta función SOLO consulta (GET). No crea ni cambia nada.
+   Cuesta ~8 llamadas.
+   ============================================================ */
+function diagnosticarReportes() {
+  const p = function(s){ Logger.log(s); };
+
+  p('══════════════════════════════════════════════════════');
+  p('  ¿EXISTE UN REPORTE MASIVO PARA ESTA CUENTA?');
+  p('══════════════════════════════════════════════════════');
+  p('');
+  p('Hoy: 1 llamada por SKU = ' + '~3,341 llamadas por ciclo completo.');
+  p('Si algo de esto responde 200, bajamos a 2-3 llamadas.');
+  p('');
+
+  const pruebas = [
+    ['A', 'Reporte de items (legacy)',      '/v3/getReport',              { type: 'item' }],
+    ['B', 'Reporte de inventario (legacy)', '/v3/getReport',              { type: 'inventory' }],
+    ['C', 'Reportes disponibles',           '/v3/reports/reportRequests', {}],
+    ['D', 'Reportes — filtrado ITEM',       '/v3/reports/reportRequests', { reportType: 'ITEM', reportVersion: 'v1' }],
+    ['E', 'Reportes (ruta alterna)',        '/v3/report/reportRequests',  {}],
+    ['F', 'Inventario multi-nodo',          '/v3/inventories',            { limit: 1 }],
+    ['G', 'Inventario sin filtro de SKU',   '/v3/inventory',              { limit: 1 }],
+    ['H', 'Inventario por nodo',            '/v3/fulfillment/inventory',  { limit: 1 }],
+  ];
+
+  const ganadores = [];
+
+  pruebas.forEach(function(t){
+    const letra = t[0], nombre = t[1], ruta = t[2], params = t[3];
+    const r = probe_(ruta, params);
+    const marca = r.ok ? '✅' : '❌';
+
+    p(marca + ' ' + letra + ') ' + pad_(nombre, 30) + ' ' + ruta);
+    p('      HTTP ' + r.code);
+
+    if (r.ok) {
+      ganadores.push(letra + ') ' + ruta);
+      if (r.data) {
+        p('      forma: ' + truncate_(describeShape_(r.data), 220));
+      } else {
+        // Un reporte real llega como CSV o ZIP, no como JSON.
+        p('      NO es JSON (' + r.body.length + ' bytes) — ' +
+          'muy probablemente el archivo del reporte. 🎯');
+        p('      primeros bytes: ' + truncate_(r.body.substring(0, 120), 120));
+      }
+    } else {
+      p('      ' + truncate_(String(r.body).replace(/\s+/g, ' '), 160));
+    }
+    p('');
+    Utilities.sleep(300);
+  });
+
+  p('══════════════════════════════════════════════════════');
+  if (ganadores.length) {
+    p('  🎯 SÍ HAY POR DÓNDE:');
+    ganadores.forEach(function(g){ p('     ' + g); });
+    p('');
+    p('  Pásame este log completo y reescribo el barrido para');
+    p('  usar el reporte. El ciclo pasaría de ~9 horas a minutos.');
+  } else {
+    p('  Ninguno respondió 200.');
+    p('');
+    p('  Esta cuenta no tiene habilitada la API de reportes.');
+    p('  Se queda el barrido SKU por SKU (que ya funciona).');
+    p('  Para habilitarla hay que pedírselo al account manager de');
+    p('  Walmart: "Report Management API" / "Program Eligibility".');
+  }
+  p('══════════════════════════════════════════════════════');
+  p('');
+  p('👉 Copia TODO este log y pásamelo.');
+}

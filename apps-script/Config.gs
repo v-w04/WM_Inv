@@ -37,6 +37,9 @@ const WM_CONFIG = {
   PROP_INV_CURSOR:    'INV_CURSOR',        // posición del barrido de inv. normal
   PROP_WFS_ENDPOINT:  'WFS_ENDPOINT_MODE', // 'new' | 'legacy' — se autodetecta
   PROP_LAST_MAIN:     'LAST_MAIN_RUN',     // timestamp del último syncMain
+  PROP_LAST_CATALOG:  'LAST_CATALOG_RUN',  // timestamp del último catálogo COMPLETO
+  PROP_ITEMS_LIMIT:   'ITEMS_PAGE_LIMIT',  // tamaño de página que Walmart sí acepta
+  PROP_MASTER_COUNT:  'LAST_MASTER_COUNT', // cuántos SKUs tenía la hoja la última vez
 
   // ------- CacheService keys -------
   CACHE_TOKEN:         'wm_access_token',
@@ -48,24 +51,35 @@ const WM_CONFIG = {
   // ------- Triggers -------
   // Calibrado contra la CUOTA DIARIA de UrlFetch (20,000 en cuentas Gmail).
   //
-  //   syncMain        96 corridas/día × ~70 llamadas =  6,720
-  //   syncRegularChunk 48 corridas/día × ~70 SKUs    =  3,360
-  //                                          TOTAL   = 10,080  ← mitad de la cuota
+  // ⚠️ ESOS 20,000 SON POR CUENTA DE GOOGLE, NO POR PROYECTO.
+  //    Todos los Apps Script que corran bajo la misma cuenta (cotizador,
+  //    cambio de precios, MELI-ODOO, Site Sheet…) comen de la MISMA bolsa.
+  //    Por eso el presupuesto propio de aquí es bastante más bajo que 20,000:
+  //    hay que dejarle aire a los demás proyectos.
   //
-  // Antes esto estaba en 10 y 5 min, lo que daba ~82,000 llamadas/día
-  // y tumbaba el servicio a media mañana.
-  REFRESH_INTERVAL_MIN: 15,   // catálogo + WFS
+  // Presupuesto de este proyecto (calibrado 08/09/2026):
+  //
+  //   syncMain "ligero"  (solo WFS)     72/día × ~5  llamadas =    360
+  //   syncMain "completo" (WFS+catálogo) 24/día × ~22 llamadas =    528
+  //   syncRegularChunk                   48/día × 200 SKUs     =  9,600
+  //                                                    TOTAL   = 10,488
+  //
+  // Antes: 96 corridas/día re-paginando el catálogo entero a 50 por página
+  // (67 páginas) = 6,816 llamadas solo para releer un catálogo que no cambia.
+  REFRESH_INTERVAL_MIN: 15,   // WFS (el stock sí se mueve con cada venta)
   CHUNK_INTERVAL_MIN:   30,   // barrido de inventario normal
+  CATALOG_REFRESH_MIN:  60,   // catálogo completo desde la API (lo demás se relee de la hoja)
 
   // ------- Presupuesto de llamadas HTTP -------
-  DAILY_FETCH_BUDGET:  17000,  // tope propio, por debajo de los 20,000 de Google
-  MAX_SKUS_POR_CHUNK:  80,     // techo por corrida, además del límite de tiempo
+  DAILY_FETCH_BUDGET:  14000,  // tope propio; deja ~6,000 a los otros proyectos
+  MAX_SKUS_POR_CHUNK:  200,    // techo por corrida, además del límite de tiempo
+  ITEMS_PAGE_LIMIT:    200,    // se intenta esto en /v3/items; si Walmart lo recorta, se ajusta solo
   PROP_FETCH_COUNT:    'FETCH_COUNT',
   PROP_FETCH_DATE:     'FETCH_DATE',
 
   // ------- Presupuestos de tiempo (Apps Script mata a los 6 min = 360s) -------
-  BUDGET_MAIN_MS:  240000,   // 4 min para catálogo + WFS (medido: ~95 seg)
-  BUDGET_CHUNK_MS: 120000,   // 2 min para el barrido — el tope real es MAX_SKUS_POR_CHUNK
+  BUDGET_MAIN_MS:  240000,   // 4 min para catálogo + WFS
+  BUDGET_CHUNK_MS: 270000,   // 4.5 min para el barrido — el tope real es MAX_SKUS_POR_CHUNK
 
   // ------- Pacing (rate limit: 300 TPM) -------
   PAGE_PACING_MS: 220,   // entre páginas de catálogo/WFS

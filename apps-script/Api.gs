@@ -67,12 +67,48 @@ function fetchRestantes_() {
 function verConsumo() {
   const restan = fetchRestantes_();
   const usadas = WM_CONFIG.DAILY_FETCH_BUDGET - restan;
-  Logger.log('── CONSUMO DE HOY ──');
-  Logger.log('  Usadas:      ' + usadas + ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
-  Logger.log('  Restantes:   ' + restan);
-  Logger.log('  Cuota Google: 20,000 (nuestro tope es más bajo a propósito)');
-  if (restan < 2000) Logger.log('  ⚠ Queda poco. Los triggers van a empezar a saltarse.');
-  return { usadas: usadas, restantes: restan };
+  const bloqueada = cuotaGoogleAgotada_();
+
+  Logger.log('── CONSUMO DE HOY (esta cuenta de Google) ──');
+  Logger.log('  Usadas por ESTE proyecto: ' + usadas + ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
+  Logger.log('  Restantes:                ' + restan);
+  Logger.log('');
+  Logger.log('  Cuota real de Google: 20,000 al día POR CUENTA, no por proyecto.');
+  Logger.log('  Todos tus scripts bajo esta misma cuenta comparten esos 20,000.');
+
+  if (bloqueada) {
+    Logger.log('');
+    Logger.log('  🛑 Google ya reportó CUOTA AGOTADA para esta cuenta hoy.');
+    if (usadas < WM_CONFIG.DAILY_FETCH_BUDGET * 0.7) {
+      Logger.log('     Y este proyecto solo lleva ' + usadas + '.');
+      Logger.log('     👉 Se la está comiendo OTRO Apps Script de esta misma cuenta');
+      Logger.log('        (cotizador, cambio de precios, MELI-ODOO, Site Sheet…).');
+      Logger.log('        Muévelo a otra cuenta o bájale la frecuencia.');
+    } else {
+      Logger.log('     Fue este proyecto. Baja MAX_SKUS_POR_CHUNK o sube CATALOG_REFRESH_MIN.');
+    }
+  } else if (restan < 2000) {
+    Logger.log('');
+    Logger.log('  ⚠ Queda poco. Los triggers van a empezar a saltarse.');
+  }
+
+  const lim = PropertiesService.getScriptProperties()
+                .getProperty(WM_CONFIG.PROP_ITEMS_LIMIT);
+  Logger.log('');
+  Logger.log('  Página del catálogo: ' + (lim || 'sin probar todavía') +
+             ' items por llamada.');
+
+  return { usadas: usadas, restantes: restan, cuotaGoogleBloqueada: bloqueada };
+}
+
+/**
+ * Olvida el tamaño de página aprendido para /v3/items.
+ * Úsalo si sospechas que Walmart ya acepta páginas más grandes.
+ */
+function resetItemsLimit() {
+  PropertiesService.getScriptProperties().deleteProperty(WM_CONFIG.PROP_ITEMS_LIMIT);
+  Logger.log('✅ Tamaño de página olvidado. La próxima corrida vuelve a probar ' +
+             WM_CONFIG.ITEMS_PAGE_LIMIT + '.');
 }
 
 /** Reinicia el contador a mano. Úsalo solo si sabes que Google ya lo reseteó. */
@@ -368,8 +404,20 @@ function fetchWfsNew_() {
 function getAllItems(deadlineMs) {
   const out = [];
   const seen = {};
-  const limit = 50;
   const maxPages = 400;
+  const props = PropertiesService.getScriptProperties();
+
+  /* ── Tamaño de página ──────────────────────────────────────────
+     Estaba fijo en 50: 3,341 SKUs = 67 llamadas por corrida.
+     Pedimos 200 y dejamos que Walmart nos diga cuánto acepta:
+       · Si responde con 200 → 17 llamadas en vez de 67.
+       · Si nos recorta la página → nos quedamos con ese tamaño.
+       · Si de plano rechaza el limit → bajamos a 50 y lo recordamos.
+     El valor bueno queda guardado, así que solo se paga la prueba
+     una vez en la vida del script.                                  */
+  let limit = Number(props.getProperty(WM_CONFIG.PROP_ITEMS_LIMIT) || 0);
+  if (!limit || limit < 1) limit = WM_CONFIG.ITEMS_PAGE_LIMIT;
+  let limitConfirmado = false;
 
   let pages = 0;
   let mode = null;          // 'cursor' | 'offset'
@@ -389,12 +437,47 @@ function getAllItems(deadlineMs) {
     if (mode === 'cursor' && cursor) params[cursorField] = cursor;
     if (mode === 'offset') params.offset = offset;
 
-    const data = wmGet_('/v3/items', params);
+    let data;
+    try {
+      data = wmGet_('/v3/items', params);
+    } catch (e) {
+      // Si el problema es la cuota, no hay nada que ajustar: se propaga.
+      if (e && e.sinPresupuesto) throw e;
+      // Si nunca hemos confirmado el tamaño de página, el limit grande
+      // es el sospechoso número uno. Bajamos a 50 y lo intentamos otra vez.
+      if (!limitConfirmado && limit > 50) {
+        Logger.log('  ↓ /v3/items no aceptó limit=' + limit +
+                   '. Se baja a 50 y se recuerda. (' + (e.message || e) + ')');
+        limit = 50;
+        props.setProperty(WM_CONFIG.PROP_ITEMS_LIMIT, '50');
+        limitConfirmado = true;
+        pages--;              // esta página no llegó a contar
+        continue;
+      }
+      throw e;
+    }
+
     const items = data.ItemResponse || data.items || [];
 
     if (total === null) {
       const t = Number(data.totalItems || data.totalCount || 0);
       total = t > 0 ? t : null;
+    }
+
+    // Primera página buena: si nos dieron menos de lo pedido pero el
+    // catálogo es más grande, Walmart topó la página ahí. Ese es el
+    // tamaño real y es el que guardamos.
+    if (!limitConfirmado) {
+      limitConfirmado = true;
+      if (items.length && items.length < limit && total && total > items.length) {
+        Logger.log('  ↓ Walmart topó la página en ' + items.length +
+                   ' (pedimos ' + limit + '). Ese será el tamaño de ahora en adelante.');
+        limit = items.length;
+      } else if (items.length >= limit) {
+        Logger.log('  ✔ Página de ' + limit + ' aceptada — ' +
+                   Math.ceil((total || 0) / limit) + ' llamadas para todo el catálogo.');
+      }
+      props.setProperty(WM_CONFIG.PROP_ITEMS_LIMIT, String(limit));
     }
 
     // Decidir el modo con la primera respuesta

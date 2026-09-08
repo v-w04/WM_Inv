@@ -43,7 +43,9 @@ function onOpenMenu(e) {
   ui.createMenu('⚡ WM Inventario')
     .addSubMenu(ui.createMenu('🔄 Sincronizar')
       .addItem('Catálogo + WFS  (~80 seg)',        'mnu_syncMain')
-      .addItem('Inventario propio  (un lote)',      'mnu_chunk'))
+      .addItem('Inventario propio  (un lote)',      'mnu_chunk')
+      .addSeparator()
+      .addItem('Forzar catálogo completo ahora',    'mnu_forzarCatalogo'))
 
     .addSubMenu(ui.createMenu('📊 Estado')
       .addItem('Avance del barrido',                'mnu_progreso')
@@ -57,7 +59,8 @@ function onOpenMenu(e) {
       .addItem('Probar conexión al Sheet',          'mnu_testSheet')
       .addItem('Probar login con Walmart',          'mnu_testAuth')
       .addItem('Probar todos los endpoints',        'mnu_diagEndpoints')
-      .addItem('Probar paginación del catálogo',    'mnu_diagPaginacion'))
+      .addItem('Probar paginación del catálogo',    'mnu_diagPaginacion')
+      .addItem('¿Hay reporte masivo?  (ahorro)',    'mnu_diagReportes'))
 
     .addSeparator()
 
@@ -296,6 +299,45 @@ function mnu_diagPaginacion() {
   }
 }
 
+function mnu_diagReportes() {
+  aviso_('Buscando reporte masivo…', 15);
+  try {
+    diagnosticarReportes();
+    dialogo_('¿Hay reporte masivo?',
+      'Listo. El detalle quedó en el registro de ejecuciones.\n\n' +
+      'Para verlo: en el editor de Apps Script, panel izquierdo →\n' +
+      'Ejecuciones → la más reciente.\n\n' +
+      'Si alguna prueba salió ✅, cópiame el log: se puede cambiar\n' +
+      'el barrido de 3,341 llamadas a 2 o 3.');
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
+
+function mnu_forzarCatalogo() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.alert('¿Bajar el catálogo completo ahora?',
+    'Normalmente el catálogo se baja una vez por hora y el resto de\n' +
+    'las corridas lo relee de la hoja (gratis).\n\n' +
+    'Esto lo fuerza ahora mismo. Úsalo si acabas de publicar o\n' +
+    'despublicar productos y no quieres esperar.\n\n' +
+    'Cuesta ~20 llamadas.',
+    ui.ButtonSet.YES_NO);
+  if (r !== ui.Button.YES) return;
+
+  PropertiesService.getScriptProperties()
+    .deleteProperty(WM_CONFIG.PROP_LAST_CATALOG);
+
+  const res = correr_('Catálogo completo + WFS', syncMain);
+  if (!res) return;
+  if (res.skipped) {
+    dialogo_('Se saltó la corrida', 'Motivo: ' + (res.reason || 'desconocido'));
+    return;
+  }
+  dialogo_('✅ Catálogo actualizado',
+    res.count + ' SKUs (' + res.wfs + ' en WFS) en ' + res.elapsedSec + ' seg.');
+}
+
 /** Muestra texto largo en una ventana con scroll */
 function mostrarTexto_(titulo, texto) {
   const html = HtmlService.createHtmlOutput(
@@ -315,14 +357,37 @@ function mostrarTexto_(titulo, texto) {
 function mnu_instalarTriggers() {
   try {
     instalarTriggers();
-    const cm = Math.floor(1440 / WM_CONFIG.REFRESH_INTERVAL_MIN);
-    const cc = Math.floor(1440 / WM_CONFIG.CHUNK_INTERVAL_MIN);
+
+    // Corridas por día
+    const cm  = Math.floor(1440 / WM_CONFIG.REFRESH_INTERVAL_MIN);   // syncMain
+    const cc  = Math.floor(1440 / WM_CONFIG.CHUNK_INTERVAL_MIN);     // barrido
+    const cat = Math.floor(1440 / WM_CONFIG.CATALOG_REFRESH_MIN);    // catálogo completo
+
+    // Tamaño de página aprendido para /v3/items (si ya se probó)
+    const lim = Number(PropertiesService.getScriptProperties()
+                  .getProperty(WM_CONFIG.PROP_ITEMS_LIMIT) || WM_CONFIG.ITEMS_PAGE_LIMIT);
+    const pagsCatalogo = Math.ceil(3400 / lim) + 2;
+
+    const costoWfs   = 4;                          // 3 páginas de 200 + token
+    const gastoMain  = (cm - cat) * costoWfs + cat * (costoWfs + pagsCatalogo);
+    const gastoChunk = cc * WM_CONFIG.MAX_SKUS_POR_CHUNK;
+    const total      = gastoMain + gastoChunk;
+
+    const skusDia  = gastoChunk;
+    const horasCiclo = (3400 / (skusDia / 24)).toFixed(1);
+
     dialogo_('✅ Triggers instalados',
-      'syncMain          cada ' + WM_CONFIG.REFRESH_INTERVAL_MIN + ' min\n' +
-      'syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min\n\n' +
-      'Consumo estimado:\n' +
-      '  ' + (cm * 70 + cc * WM_CONFIG.MAX_SKUS_POR_CHUNK) +
-      ' llamadas al día, de ' + WM_CONFIG.DAILY_FETCH_BUDGET + ' presupuestadas.');
+      'syncMain          cada ' + WM_CONFIG.REFRESH_INTERVAL_MIN + ' min  (solo WFS)\n' +
+      'catálogo completo cada ' + WM_CONFIG.CATALOG_REFRESH_MIN + ' min\n' +
+      'syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min  (' +
+        WM_CONFIG.MAX_SKUS_POR_CHUNK + ' SKUs)\n\n' +
+      'Consumo estimado al día:\n' +
+      '  syncMain   ' + gastoMain + '\n' +
+      '  barrido    ' + gastoChunk + '\n' +
+      '  TOTAL      ' + total + '  de ' + WM_CONFIG.DAILY_FETCH_BUDGET + ' presupuestadas\n\n' +
+      'Ciclo completo de inventario: ~' + horasCiclo + ' horas.\n\n' +
+      '⚠️ Los 20,000 de Google son POR CUENTA, no por proyecto.\n' +
+      'Si esta cuenta corre otros Apps Script, comparten la bolsa.');
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }

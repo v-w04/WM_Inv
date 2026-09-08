@@ -41,24 +41,76 @@ function syncMain() {
       return { skipped: true, reason: 'cuota de Google agotada' };
     }
 
-    // Un syncMain completo cuesta ~70 llamadas. Si no alcanza, mejor no
-    // empezar: dejaría el catálogo a medias y gastaría lo que queda.
+    /* ── ¿Toca bajar el catálogo completo? ───────────────────────
+       El stock de WFS se mueve con cada venta, así que eso sí se
+       refresca cada 15 min: son 3 llamadas.
+
+       El catálogo (nombres, precios, publishedStatus) casi no cambia,
+       y bajarlo cuesta ~17 llamadas. Repaginarlo 96 veces al día era
+       el 65% de todo el consumo del proyecto para releer lo mismo.
+       Ahora se baja una vez por hora; el resto de las corridas lo
+       relee de la hoja, que no cuesta ni una llamada.               */
+    const propsS = PropertiesService.getScriptProperties();
+    const lastCat = Number(propsS.getProperty(WM_CONFIG.PROP_LAST_CATALOG) || 0);
+    const minsSinCat = lastCat ? (Date.now() - lastCat) / 60000 : 999999;
+    let tocaCatalogo = minsSinCat >= WM_CONFIG.CATALOG_REFRESH_MIN;
+
+    // Si no alcanza el presupuesto, mejor no empezar a medias.
     const restan = fetchRestantes_();
-    if (restan < 120) {
-      Logger.log('⏭ syncMain: solo quedan ' + restan + ' llamadas hoy. Se salta.');
+    const costo = tocaCatalogo ? 60 : 15;
+    if (restan < costo) {
+      Logger.log('⏭ syncMain: solo quedan ' + restan + ' llamadas hoy ' +
+                 '(esta corrida necesita ~' + costo + '). Se salta.');
       return { skipped: true, reason: 'sin presupuesto' };
     }
 
     Logger.log('▶ syncMain arrancando... (' + restan + ' llamadas disponibles hoy)');
 
-    // WFS primero (rápido: 3 páginas)
+    // WFS siempre (rápido: 3 páginas de 200)
     const wfsList = getAllWfsInventory();
     const wfsBySku = {};
     wfsList.forEach(function(w){ if (w.sku) wfsBySku[w.sku] = w; });
 
-    // Catálogo (66 páginas)
-    const items = getAllItems(deadline);
+    // Catálogo: de la API si toca, de la hoja si no
+    let items, origenCat;
+    if (tocaCatalogo) {
+      items = getAllItems(deadline);
+      origenCat = 'API';
+    } else {
+      items = leerCatalogoDelMaster_();
+      origenCat = 'hoja (catálogo de hace ' + minsSinCat.toFixed(0) + ' min)';
+
+      // Guardarraíl: la hoja se reescribe entera con lo que aquí se lea.
+      // Si por lo que sea vino incompleta (lectura a media escritura, alguien
+      // borrando filas), escribirla de vuelta convertiría un accidente en
+      // pérdida de datos. Ante la duda, se paga la API.
+      const ultimoN = Number(propsS.getProperty(WM_CONFIG.PROP_MASTER_COUNT) || 0);
+      if (ultimoN && items.length < ultimoN * 0.5) {
+        Logger.log('  ⚠ La hoja solo trajo ' + items.length + ' SKUs de ~' + ultimoN +
+                   '. No se reescribe con eso: se baja el catálogo de la API.');
+        items = [];
+      }
+
+      if (!items.length) {
+        // Primera corrida, hoja vacía, o el guardarraíl de arriba.
+        // Esta corrida se presupuestó como "ligera" (~15 llamadas) y ahora
+        // resulta que necesita el catálogo completo. Se revisa otra vez
+        // antes de arrancarlo: dejarlo a medias sería peor.
+        if (fetchRestantes_() < 60) {
+          Logger.log('⏭ syncMain: hace falta el catálogo completo y ya no ' +
+                     'alcanza el presupuesto. Se salta esta corrida.');
+          return { skipped: true, reason: 'sin presupuesto para el catálogo' };
+        }
+        Logger.log('  ℹ No hay catálogo confiable que releer. Se baja de la API.');
+        items = getAllItems(deadline);
+        origenCat = 'API (la hoja no servía)';
+        tocaCatalogo = true;
+      }
+    }
+
     if (!items.length) throw new Error('El catálogo regresó vacío — revisa el log.');
+    if (tocaCatalogo) propsS.setProperty(WM_CONFIG.PROP_LAST_CATALOG, String(Date.now()));
+    Logger.log('  Catálogo: ' + items.length + ' items desde ' + origenCat);
 
     // Inventario propio ya consultado, para pegarlo al master.
     // Se lee ANTES de reconstruir Inv_Normal para no perder nada.
@@ -111,6 +163,7 @@ function syncMain() {
     });
 
     writeMasterSheet_(rows);
+    propsS.setProperty(WM_CONFIG.PROP_MASTER_COUNT, String(rows.length));
     // ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
     // ya no usa cursor de posición, así que crecer el catálogo o que
     // Walmart devuelva otro orden ya no borra el avance.
@@ -119,9 +172,14 @@ function syncMain() {
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
     const conWfs = rows.filter(function(r){ return r.esWFS === 'SÍ'; }).length;
-    Logger.log('✅ syncMain OK: ' + rows.length + ' SKUs (' + conWfs + ' en WFS) en ' + elapsed + 's');
-    logRun_('syncMain', rows.length, elapsed, conWfs + ' en WFS');
-    return { count: rows.length, wfs: conWfs, elapsedSec: elapsed };
+    Logger.log('✅ syncMain OK: ' + rows.length + ' SKUs (' + conWfs + ' en WFS) en ' + elapsed + 's' +
+               ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
+    logRun_('syncMain', rows.length, elapsed,
+            conWfs + ' en WFS' + (tocaCatalogo ? ' · catálogo completo' : ' · solo WFS'));
+    return {
+      count: rows.length, wfs: conWfs, elapsedSec: elapsed,
+      catalogoCompleto: tocaCatalogo,
+    };
 
   } finally {
     lock.releaseLock();
@@ -323,7 +381,21 @@ function reiniciarBarrido() {
  * Orden de columnas en la hoja Inventario.
  * Las primeras 9 son las que se usan a diario — mismo orden que en el dashboard.
  */
-const MASTER_COLS = [
+/* ──────────────────────────────────────────────────────────────
+   COLUMNAS DE LA HOJA "Inventario"
+
+   Antes eran 40 fijas y 17 salían SIEMPRE vacías: son campos que
+   solo existen en /v3/wfs/inventory (WFS avanzado), y esa cuenta
+   todavía no tiene habilitado "Program Eligibility".
+
+   Ahora la lista se arma sola:
+     · modo legacy → solo las columnas que de verdad se llenan (23)
+     · modo new    → se agregan las 15 de analítica WFS
+
+   El día que Walmart habilite el endpoint nuevo, detectWfsEndpoint_()
+   guarda 'new' y las columnas reaparecen sin tocar código.
+   ────────────────────────────────────────────────────────────── */
+const MASTER_COLS_BASE = [
   // ── Las de uso diario ──
   'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
   'publishedStatus', 'esWFS',
@@ -332,18 +404,85 @@ const MASTER_COLS = [
   'stockTotal',      // la suma — el número que importa de un vistazo
   'invRevisado',     // cuándo se consultó invNormal por última vez
   // ── Resto del catálogo ──
-  'productName', 'productType', 'shelfCompleto', 'wpid', 'mart',
-  'lifecycleStatus', 'unpublishedReasons', 'offerId',
-  // ── Resto de WFS ──
-  'wfsEnMano', 'wfsReservado', 'wfsInbound',
-  'wfsEstado', 'wfsTipoNodo', 'wfsActualizado', 'wfsPrimerStock',
+  'productName', 'productType', 'shelfCompleto', 'wpid', 'mart', 'offerId',
+  // ── Resto de WFS (esto sí lo trae el endpoint legacy) ──
+  'wfsEnMano', 'wfsReservado', 'wfsEstado', 'wfsTipoNodo', 'wfsActualizado',
+];
+
+/** Solo con /v3/wfs/inventory habilitado. Con legacy vienen vacías. */
+const MASTER_COLS_WFS_PRO = [
+  'wfsInbound', 'wfsPrimerStock',
   'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270', 'wfsEdad271_365', 'wfsEdad365plus',
   'wfsProyS1_4', 'wfsProyS5_8', 'wfsProyS9_12',
   'wfsSellThrough', 'wfsDiasSupply', 'wfsFechaOOS', 'wfsSugeridas', 'wfsExcedente',
 ];
 
+function getMasterCols_() {
+  const modo = PropertiesService.getScriptProperties()
+                 .getProperty(WM_CONFIG.PROP_WFS_ENDPOINT);
+  return (modo === 'new')
+    ? MASTER_COLS_BASE.concat(MASTER_COLS_WFS_PRO)
+    : MASTER_COLS_BASE.slice();
+}
+
+/** Campos que vienen de /v3/items — los únicos que se pueden releer de la hoja */
+const CAMPOS_CATALOGO = [
+  'sku', 'shelf', 'upc', 'gtin', 'price', 'currency', 'publishedStatus',
+  'productName', 'productType', 'shelfCompleto', 'wpid', 'mart',
+];
+
 /** Columnas que Sheets debe tratar como TEXTO (si no, se come los ceros iniciales) */
 const COLS_TEXTO = ['upc', 'gtin', 'sku'];
+
+/**
+ * Relee el catálogo desde la hoja "Inventario" en vez de la API.
+ *
+ * Devuelve la misma forma que getAllItems(), pero SOLO con los campos
+ * que vienen de /v3/items. Todo lo de WFS y el inventario propio se
+ * vuelve a calcular en syncMain con datos frescos, así que no se relee
+ * nada que pueda estar viejo.
+ *
+ * Cuesta CERO llamadas HTTP. Ese es el punto.
+ */
+function leerCatalogoDelMaster_() {
+  const out = [];
+  try {
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+    if (!sh) return out;
+
+    const last = sh.getLastRow();
+    const ancho = sh.getLastColumn();
+    if (last < 2 || ancho < 1) return out;
+
+    const head = sh.getRange(1, 1, 1, ancho).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const idx = {};
+    head.forEach(function(h, i){ if (h && idx[h] === undefined) idx[h] = i; });
+    if (idx['sku'] === undefined) {
+      Logger.log('  ⚠ La hoja no tiene columna "sku". No se puede releer el catálogo.');
+      return out;
+    }
+
+    const vals = sh.getRange(2, 1, last - 1, ancho).getValues();
+    vals.forEach(function(r){
+      const sku = String(r[idx['sku']] || '').trim();
+      if (!sku) return;
+      const o = {};
+      CAMPOS_CATALOGO.forEach(function(c){
+        o[c] = (idx[c] !== undefined && r[idx[c]] != null) ? r[idx[c]] : '';
+      });
+      o.sku = sku;
+      // upc/gtin son texto con ceros a la izquierda: nunca como número.
+      o.upc  = o.upc  === '' ? '' : String(o.upc);
+      o.gtin = o.gtin === '' ? '' : String(o.gtin);
+      out.push(o);
+    });
+  } catch (e) {
+    Logger.log('  ⚠ No se pudo releer el catálogo de la hoja: ' + e.message);
+    return [];
+  }
+  return out;
+}
 
 /**
  * Lee la hoja Inv_Normal a un mapa por SKU.
@@ -376,6 +515,7 @@ function leerInvNormal_() {
 function writeMasterSheet_(rows) {
   if (!rows || !rows.length) return;
   const sh = getSheet_(WM_CONFIG.SHEET_MASTER);
+  const MASTER_COLS = getMasterCols_();
 
   const values = [MASTER_COLS].concat(rows.map(function(r){
     return MASTER_COLS.map(function(c){ return r[c] != null ? r[c] : ''; });
@@ -466,12 +606,21 @@ function actualizarStockEnMaster_(datosRegular) {
     const last = sh.getLastRow();
     if (last < 2) return;
 
-    const cSku   = MASTER_COLS.indexOf('sku') + 1;
-    const cWfs   = MASTER_COLS.indexOf('wfsDisponible') + 1;
-    const cProp  = MASTER_COLS.indexOf('invNormal') + 1;
-    const cTotal = MASTER_COLS.indexOf('stockTotal') + 1;
-    const cRev   = MASTER_COLS.indexOf('invRevisado') + 1;
-    if (cProp < 1 || cTotal < 1) return;
+    // Las posiciones se leen del encabezado REAL de la hoja, no de la
+    // constante: si el modo WFS cambia o alguien mueve una columna,
+    // esto sigue escribiendo en el lugar correcto en vez de corromper datos.
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const cSku   = head.indexOf('sku') + 1;
+    const cWfs   = head.indexOf('wfsDisponible') + 1;
+    const cProp  = head.indexOf('invNormal') + 1;
+    const cTotal = head.indexOf('stockTotal') + 1;
+    const cRev   = head.indexOf('invRevisado') + 1;
+    if (cSku < 1 || cWfs < 1 || cProp < 1 || cTotal < 1 || cRev < 1) {
+      Logger.log('  ⚠ El encabezado de "' + WM_CONFIG.SHEET_MASTER +
+                 '" no tiene las columnas de stock. Se salta la actualización.');
+      return;
+    }
 
     // Mapa de lo recién consultado
     const nuevo = {};
