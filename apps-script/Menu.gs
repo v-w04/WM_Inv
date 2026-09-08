@@ -72,7 +72,8 @@ function onOpenMenu(e) {
       .addSeparator()
       .addItem('Reintentar WFS avanzado',           'mnu_resetWfs')
       .addItem('Reiniciar barrido desde cero',      'mnu_reiniciarBarrido')
-      .addItem('Reiniciar contador de llamadas',    'mnu_reiniciarContador'))
+      .addItem('Reiniciar contador de llamadas',    'mnu_reiniciarContador')
+      .addItem('Quitar marca de cuota agotada',     'mnu_limpiarCuota'))
 
     .addSeparator()
     .addItem('🔗 Abrir el dashboard',               'mnu_abrirDashboard')
@@ -186,17 +187,28 @@ function mnu_consumo() {
   const restan = fetchRestantes_();
   const usadas = WM_CONFIG.DAILY_FETCH_BUDGET - restan;
   const pct = Math.round(usadas / WM_CONFIG.DAILY_FETCH_BUDGET * 100);
+  const bloqueado = cuotaGoogleAgotada_();
 
   dialogo_('📞 Llamadas de hoy',
-    'Usadas:      ' + usadas + '  (' + pct + '%)\n' +
-    'Restantes:   ' + restan + '\n' +
-    'Presupuesto: ' + WM_CONFIG.DAILY_FETCH_BUDGET + '\n\n' +
-    'La cuota real de Google es 20,000/día. Nuestro tope es más bajo\n' +
-    'a propósito, para que el dashboard siga respondiendo aunque los\n' +
-    'triggers ya hayan gastado lo suyo.\n\n' +
-    (restan < 2000
-      ? '⚠️ Queda poco. Los triggers van a empezar a saltarse corridas.'
-      : 'Se reinicia a medianoche, hora de México.'));
+    (bloqueado
+      ? '🛑 GOOGLE YA CERRÓ POR HOY\n\n' +
+        'La cuota diaria del script se agotó y el sistema dejó de\n' +
+        'intentar. Se reinicia en la madrugada (1-3 am hora de México)\n' +
+        'y todo vuelve solo.\n\n' +
+        '────────────────────────────────\n\n'
+      : '') +
+    'Nuestro contador\n' +
+    '  Usadas:      ' + usadas + '  (' + pct + '%)\n' +
+    '  Restantes:   ' + restan + '\n' +
+    '  Presupuesto: ' + WM_CONFIG.DAILY_FETCH_BUDGET + '\n\n' +
+    (bloqueado
+      ? 'Ojo: el contador puede decir que sobra presupuesto, pero solo\n' +
+        'sabe de las llamadas que hizo él. Si el script gastó cuota antes\n' +
+        'de que existiera, no se entera. Manda el error de Google.'
+      : (restan < 2000
+          ? '⚠️ Queda poco. Los triggers van a empezar a saltarse corridas.'
+          : 'La cuota real de Google es 20,000/día. Nuestro tope es más\n' +
+            'bajo a propósito, para dejar margen al dashboard.')));
 }
 
 function mnu_triggers() {
@@ -362,6 +374,21 @@ function mnu_reiniciarContador() {
   if (r !== ui.Button.YES) return;
   reiniciarContadorFetch();
   aviso_('Contador en cero.', 5);
+}
+
+function mnu_limpiarCuota() {
+  const ui = SpreadsheetApp.getUi();
+  const r = ui.alert('¿Quitar la marca de cuota agotada?',
+    'Cuando Google reporta que la cuota diaria se acabó, el script deja\n' +
+    'de intentar para no empeorarlo. Esa marca se limpia sola al día\n' +
+    'siguiente.\n\n' +
+    'Quítala a mano solo si sabes que Google ya reinició la cuota.\n' +
+    'Si todavía no, las llamadas van a fallar igual.',
+    ui.ButtonSet.YES_NO);
+  if (r !== ui.Button.YES) return;
+  limpiarMarcaDeCuota();
+  reiniciarContadorFetch();
+  aviso_('Marca quitada y contador en cero.', 5);
 }
 
 function mnu_abrirDashboard() {

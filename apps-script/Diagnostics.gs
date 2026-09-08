@@ -314,25 +314,45 @@ function porQueNoCorre() {
 
   /* 4 · La cuota real de Google */
   p('── 4. Cuota real de Google (la prueba de fuego) ──');
-  try {
-    const t = getAccessToken();
-    p('   ✅ Una llamada real funcionó. Token: ' + t.substring(0, 18) + '…');
-    p('      La cuota de Google NO está agotada.');
-  } catch (e) {
-    const m = String(e.message || e);
-    p('   ❌ ' + m.substring(0, 180));
-    if (m.indexOf('too many times') >= 0 || m.indexOf('demasiadas veces') >= 0) {
-      p('');
-      p('      La cuota diaria de Google sigue agotada.');
-      p('      No hay nada que hacer en el código — se reinicia sola.');
-      p('      Google la reinicia por la madrugada, hora del Pacífico');
-      p('      (entre 1 y 3 de la mañana en México).');
-      culpable = 'cuota de Google agotada';
-    } else {
-      culpable = culpable || 'falla de autenticación';
+
+  if (cuotaGoogleAgotada_()) {
+    p('   🛑 Google ya reportó hoy que la cuota está agotada.');
+    p('      El script dejó de intentar para no empeorarlo.');
+    p('      Se reinicia en la madrugada (1-3 am hora de México).');
+    culpable = 'cuota de Google agotada';
+  } else {
+    try {
+      const t = getAccessToken();
+      p('   ✅ Una llamada real funcionó. Token: ' + t.substring(0, 18) + '…');
+      p('      La cuota de Google NO está agotada.');
+    } catch (e) {
+      const m = String(e.message || e);
+      p('   ❌ ' + m.substring(0, 200));
+      if (esErrorDeCuota_(m)) {
+        marcarCuotaAgotada_();
+        p('');
+        p('      La cuota diaria de Google está agotada.');
+        p('      No hay nada que hacer en el código — se reinicia sola');
+        p('      en la madrugada, hora del Pacífico (1-3 am en México).');
+        culpable = 'cuota de Google agotada';
+      } else {
+        culpable = culpable || 'falla de autenticación';
+      }
     }
   }
   p('');
+
+  /* 4b · Aviso sobre el contador propio */
+  const restanC = fetchRestantes_();
+  if (culpable === 'cuota de Google agotada' && restanC > 5000) {
+    p('── 4b. Ojo con el contador ──');
+    p('   Nuestro contador dice que quedan ' + restanC + ' llamadas,');
+    p('   pero Google ya cerró. El contador solo sabe de lo que gastó');
+    p('   él: si el script venía gastando cuota antes de que existiera,');
+    p('   o si algo más de la cuenta la consume, no se entera.');
+    p('   La señal confiable es el error de Google, no el contador.');
+    p('');
+  }
 
   /* 5 · Estado de los datos */
   p('── 5. Datos en el Sheet ──');
@@ -428,17 +448,26 @@ function verSkusSinDato() {
   p('');
   const razones = {};
 
+  let corto = false;
   muestra.forEach(function(sku){
+    if (corto) return;
     const inv = getInventoryForSku(sku);
     if (inv.ok) {
       p('   ✅ ' + sku);
       p('      Ahora sí respondió: ' + inv.qty + ' ' + inv.unit);
-      p('      (fue un fallo pasajero — el barrido lo va a levantar solo)');
+      p('      (fue un fallo pasajero — el barrido lo levanta solo)');
       razones['pasajero'] = (razones['pasajero'] || 0) + 1;
     } else {
       p('   ❌ ' + sku);
-      p('      HTTP ' + inv.code);
-      razones['HTTP ' + inv.code] = (razones['HTTP ' + inv.code] || 0) + 1;
+      p('      ' + inv.code);
+      if (inv.detalle) p('      ' + String(inv.detalle).substring(0, 150));
+      razones[inv.code] = (razones[inv.code] || 0) + 1;
+      // Si es la cuota, no tiene caso seguir probando
+      if (inv.code === 'CUOTA_GOOGLE' || inv.sinPresupuesto) {
+        p('');
+        p('   ⏹ Se detiene la prueba: el problema no son los SKUs.');
+        corto = true;
+      }
     }
     Utilities.sleep(300);
   });
@@ -452,13 +481,30 @@ function verSkusSinDato() {
   });
   p('');
   p(' Cómo leerlo:');
-  p('   · "pasajero"  → red o timeout. Se arregla solo.');
-  p('   · HTTP 404    → el SKU está en el catálogo pero no en el');
-  p('                   endpoint de inventario. Suele pasar con');
-  p('                   productos archivados o mal dados de alta.');
-  p('   · HTTP 429    → Walmart nos está frenando. Bajar el ritmo.');
-  p('   · HTTP 400    → el SKU tiene un formato que Walmart rechaza');
-  p('                   (por ejemplo, si perdió ceros iniciales).');
+  p('   · pasajero      → red o timeout. Se arregla solo.');
+  p('   · CUOTA_GOOGLE  → NO es problema de los SKUs. Google agotó');
+  p('                     la cuota diaria del script. Se reinicia');
+  p('                     en la madrugada y todo vuelve solo.');
+  p('   · 404           → el SKU está en el catálogo pero no en el');
+  p('                     endpoint de inventario. Producto archivado');
+  p('                     o mal dado de alta.');
+  p('   · 429           → Walmart nos está frenando. Bajar el ritmo.');
+  p('   · 400           → el SKU tiene un formato que Walmart rechaza.');
+  p('   · NET           → error de red. Ahora sí muestra el detalle.');
+
+  if (razones['CUOTA_GOOGLE']) {
+    p('');
+    p('══════════════════════════════════════════════════');
+    p(' 🛑 LA CAUSA ES LA CUOTA, NO LOS SKUs');
+    p('══════════════════════════════════════════════════');
+    p(' Estos ' + sinDato.length + ' SKUs probablemente están bien.');
+    p(' No se pudieron consultar porque Google cerró la puerta');
+    p(' por hoy. Mañana el barrido los levanta solo.');
+    p('');
+    p(' Ojo: nuestro contador puede decir que hay presupuesto');
+    p(' de sobra. Solo cuenta lo que gastó él — si el script ya');
+    p(' venía gastando cuota antes, no lo sabe.');
+  }
 
   return L.join('\n');
 }

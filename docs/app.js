@@ -21,7 +21,7 @@ const STORAGE_TOKEN_TS = 'wm_dash_token_ts';
 const STORAGE_COLS     = 'wm_dash_cols';
 
 const NUM_COLS = new Set([
-  'price', 'wfsDisponible', 'wfsEnMano', 'wfsReservado', 'wfsInbound',
+  'price', 'stockTotal', 'wfsDisponible', 'wfsEnMano', 'wfsReservado', 'wfsInbound',
   'wfsEdad0_90', 'wfsEdad91_180', 'wfsEdad181_270', 'wfsEdad271_365', 'wfsEdad365plus',
   'wfsProyS1_4', 'wfsProyS5_8', 'wfsProyS9_12',
   'wfsSellThrough', 'wfsDiasSupply', 'wfsSugeridas', 'wfsExcedente',
@@ -36,7 +36,8 @@ const COL_LABELS = {
   publishedStatus: 'Publicación', lifecycleStatus: 'Ciclo de vida',
   unpublishedReasons: 'Razón despublicado',
   esWFS: '¿WFS?', offerId: 'Offer ID',
-  wfsDisponible: 'WFS Disponible', wfsEnMano: 'WFS En mano',
+  stockTotal: 'Stock total',
+  wfsDisponible: 'Stock WFS', wfsEnMano: 'WFS En mano',
   wfsReservado: 'WFS Reservado', wfsInbound: 'WFS Inbound',
   wfsEstado: 'WFS Estado', wfsTipoNodo: 'WFS Tipo nodo',
   wfsActualizado: 'WFS Actualizado', wfsPrimerStock: 'WFS Primer stock',
@@ -46,13 +47,14 @@ const COL_LABELS = {
   wfsProyS1_4: 'Proy. S1-4', wfsProyS5_8: 'Proy. S5-8', wfsProyS9_12: 'Proy. S9-12',
   wfsSellThrough: 'Sell-through', wfsDiasSupply: 'Días supply',
   wfsFechaOOS: 'Fecha agotamiento', wfsSugeridas: 'Sugeridas', wfsExcedente: 'Excedente',
-  invNormal: 'Inv. Normal', invUnidad: 'Unidad', invRevisado: 'Inv. revisado',
+  invNormal: 'Stock propio', invUnidad: 'Unidad', invRevisado: 'Revisado',
 };
 
 /* Mismas columnas y mismo orden que la hoja Inventario */
 const DEFAULT_COLS = [
   'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
-  'publishedStatus', 'esWFS', 'wfsDisponible',
+  'publishedStatus', 'esWFS',
+  'wfsDisponible', 'invNormal', 'stockTotal',
 ];
 
 /* Ancho máximo por columna, en px. Lo que no cabe se corta con "…"
@@ -60,7 +62,8 @@ const DEFAULT_COLS = [
 const COL_WIDTH = {
   sku: 190, shelf: 150, upc: 120, gtin: 120,
   price: 90, currency: 70, publishedStatus: 130,
-  esWFS: 70, wfsDisponible: 100, wfsEnMano: 100,
+  esWFS: 70, wfsDisponible: 100, invNormal: 105, stockTotal: 100,
+  invRevisado: 140, wfsEnMano: 100,
   productName: 300, shelfCompleto: 260, productType: 160,
   unpublishedReasons: 220, offerId: 200, wpid: 120,
 };
@@ -517,9 +520,11 @@ function render() {
       if (c.key === 'wfsEstado' && v) {
         cls += String(v).toLowerCase().includes('out') ? ' state-danger' : ' state-ok';
       }
-      if (c.key === 'invNormal' && v === '') {
-        return '<td class="pending" title="Aún no barrido">—</td>';
+      if ((c.key === 'invNormal' || c.key === 'stockTotal') && v === '') {
+        return '<td class="pending" title="Todavía no se consulta este SKU">—</td>';
       }
+      // Resaltar cuando no hay nada en ningún lado
+      if (c.key === 'stockTotal' && Number(v) === 0) cls += ' state-danger';
       const w = COL_WIDTH[c.key] || COL_WIDTH_DEFAULT;
       const txt = escapeHtml(v);
       // title = texto completo al pasar el cursor, porque la celda se corta

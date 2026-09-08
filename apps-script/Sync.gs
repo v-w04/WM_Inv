@@ -36,6 +36,11 @@ function syncMain() {
     PropertiesService.getScriptProperties()
       .setProperty(WM_CONFIG.PROP_LAST_MAIN, String(Date.now()));
 
+    if (cuotaGoogleAgotada_()) {
+      Logger.log('⏭ syncMain: Google reportó cuota agotada hoy. Se salta.');
+      return { skipped: true, reason: 'cuota de Google agotada' };
+    }
+
     // Un syncMain completo cuesta ~70 llamadas. Si no alcanza, mejor no
     // empezar: dejaría el catálogo a medias y gastaría lo que queda.
     const restan = fetchRestantes_();
@@ -55,16 +60,32 @@ function syncMain() {
     const items = getAllItems(deadline);
     if (!items.length) throw new Error('El catálogo regresó vacío — revisa el log.');
 
-    // Merge: una fila por SKU del catálogo, con datos de WFS si aplica
+    // Inventario propio ya consultado, para pegarlo al master.
+    // Se lee ANTES de reconstruir Inv_Normal para no perder nada.
+    const propioBySku = leerInvNormal_();
+
+    // Merge: una fila por SKU del catálogo, con WFS e inventario propio
     const rows = items.map(function(it){
       const w = wfsBySku[it.sku] || {};
+      const pr = propioBySku[it.sku] || {};
       const enWfs = !!w.sku;
+      const wfsDisp = enWfs ? (w.wfsAvailToSell != null ? Number(w.wfsAvailToSell) : 0) : 0;
+
+      // El inventario propio se deja VACÍO si nunca se ha consultado.
+      // Un 0 diría "no hay stock"; un hueco dice "todavía no sé", que
+      // es la verdad mientras el barrido no llega a ese SKU.
+      const tienePropio = pr.cantidad !== undefined && pr.cantidad !== '';
+      const propio = tienePropio ? Number(pr.cantidad) : '';
+
       return Object.assign({}, it, {
         esWFS:            enWfs ? 'SÍ' : 'NO',
         offerId:          w.offerId || '',
         // Sin WFS = 0 real, no celda vacía. Un hueco se lee como "no sé";
         // aquí sí sabemos: no está en WFS, así que no hay stock ahí.
-        wfsDisponible:    enWfs ? (w.wfsAvailToSell != null ? w.wfsAvailToSell : 0) : 0,
+        wfsDisponible:    wfsDisp,
+        invNormal:        propio,
+        stockTotal:       tienePropio ? (wfsDisp + propio) : wfsDisp,
+        invRevisado:      pr.revisado || '',
         wfsEnMano:        enWfs ? (w.wfsOnHand != null ? w.wfsOnHand : 0) : 0,
         wfsReservado:     enWfs ? (w.wfsReserved != null ? w.wfsReserved : 0) : 0,
         wfsInbound:       w.wfsInbound != null ? w.wfsInbound : '',
@@ -140,10 +161,15 @@ function syncRegularChunk() {
       return { skipped: true, reason: 'sin SKUs' };
     }
 
+    if (cuotaGoogleAgotada_()) {
+      Logger.log('⏭ Barrido: Google reportó cuota agotada hoy. Se salta.');
+      return { skipped: true, reason: 'cuota de Google agotada' };
+    }
+
     const restan = fetchRestantes_();
     const tope = Math.min(WM_CONFIG.MAX_SKUS_POR_CHUNK, Math.max(0, restan - 100));
     if (tope <= 0) {
-      Logger.log('⏭ Barrido: sin presupuesto de llamadas hoy (' + restan + ' restantes).');
+      Logger.log('⏭ Barrido: sin presupuesto propio hoy (' + restan + ' restantes).');
       return { skipped: true, reason: 'sin presupuesto' };
     }
 
@@ -228,6 +254,9 @@ function syncRegularChunk() {
     if (hechos > 0) {
       sh.getRange(2, 1, total, 4).setValues(datos);
       SpreadsheetApp.flush();
+      // Reflejarlo en la hoja principal de inmediato, para que no quede
+      // desfasada hasta el siguiente syncMain (hasta 15 min después)
+      actualizarStockEnMaster_(datos);
       invalidateCache_();
     }
 
@@ -297,7 +326,11 @@ function reiniciarBarrido() {
 const MASTER_COLS = [
   // ── Las de uso diario ──
   'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
-  'publishedStatus', 'esWFS', 'wfsDisponible',
+  'publishedStatus', 'esWFS',
+  'wfsDisponible',   // stock en bodega de Walmart (solo SKUs WFS)
+  'invNormal',       // stock en TU bodega (los que envías tú)
+  'stockTotal',      // la suma — el número que importa de un vistazo
+  'invRevisado',     // cuándo se consultó invNormal por última vez
   // ── Resto del catálogo ──
   'productName', 'productType', 'shelfCompleto', 'wpid', 'mart',
   'lifecycleStatus', 'unpublishedReasons', 'offerId',
@@ -311,6 +344,34 @@ const MASTER_COLS = [
 
 /** Columnas que Sheets debe tratar como TEXTO (si no, se come los ceros iniciales) */
 const COLS_TEXTO = ['upc', 'gtin', 'sku'];
+
+/**
+ * Lee la hoja Inv_Normal a un mapa por SKU.
+ * Se usa para pegar el inventario propio al master.
+ */
+function leerInvNormal_() {
+  const mapa = {};
+  try {
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_REGULAR);
+    if (!sh) return mapa;
+    const last = sh.getLastRow();
+    if (last < 2) return mapa;
+
+    const vals = sh.getRange(2, 1, last - 1, 4).getValues();
+    vals.forEach(function(r){
+      const sku = String(r[0] || '').trim();
+      if (!sku) return;
+      mapa[sku] = {
+        cantidad: (r[1] === '' || r[1] === null) ? '' : Number(r[1]),
+        unidad:   r[2] || '',
+        revisado: r[3] instanceof Date ? r[3] : '',
+      };
+    });
+  } catch (e) {
+    Logger.log('  ⚠ No se pudo leer Inv_Normal: ' + e.message);
+  }
+  return mapa;
+}
 
 function writeMasterSheet_(rows) {
   if (!rows || !rows.length) return;
@@ -387,6 +448,86 @@ function ensureRegularSheet_(skus) {
 
   sh.getRange(1, 1, values.length, 4).setValues(values);
   SpreadsheetApp.flush();
+}
+
+/**
+ * Copia el inventario propio a las columnas correspondientes de la hoja
+ * principal, y recalcula stockTotal.
+ *
+ * Sin esto, Inventario se quedaría con el dato viejo hasta el siguiente
+ * syncMain. Toca SOLO tres columnas — no reescribe la hoja entera.
+ *
+ * @param {Array} datosRegular filas [sku, cantidad, unidad, revisadoEn]
+ */
+function actualizarStockEnMaster_(datosRegular) {
+  try {
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+    if (!sh) return;
+    const last = sh.getLastRow();
+    if (last < 2) return;
+
+    const cSku   = MASTER_COLS.indexOf('sku') + 1;
+    const cWfs   = MASTER_COLS.indexOf('wfsDisponible') + 1;
+    const cProp  = MASTER_COLS.indexOf('invNormal') + 1;
+    const cTotal = MASTER_COLS.indexOf('stockTotal') + 1;
+    const cRev   = MASTER_COLS.indexOf('invRevisado') + 1;
+    if (cProp < 1 || cTotal < 1) return;
+
+    // Mapa de lo recién consultado
+    const nuevo = {};
+    datosRegular.forEach(function(r){
+      const s = String(r[0] || '').trim();
+      if (s) nuevo[s] = { cant: r[1], rev: r[3] };
+    });
+
+    const n = last - 1;
+    const skus = sh.getRange(2, cSku, n, 1).getValues();
+    const wfs  = sh.getRange(2, cWfs, n, 1).getValues();
+
+    const salida = [];
+    let cambios = 0;
+
+    for (let i = 0; i < n; i++) {
+      const s = String(skus[i][0] || '').trim();
+      const d = nuevo[s];
+      const wfsQty = Number(wfs[i][0]) || 0;
+
+      if (d && d.cant !== '' && d.cant !== null) {
+        const propio = Number(d.cant);
+        salida.push([propio, wfsQty + propio, d.rev || '']);
+        cambios++;
+      } else if (d) {
+        salida.push(['', wfsQty, '']);
+      } else {
+        salida.push([null, null, null]);   // null = no tocar
+      }
+    }
+
+    if (!cambios) return;
+
+    // Escribir las tres columnas juntas si son contiguas; si no, una por una
+    if (cTotal === cProp + 1 && cRev === cProp + 2) {
+      const actuales = sh.getRange(2, cProp, n, 3).getValues();
+      for (let i = 0; i < n; i++) {
+        if (salida[i][0] === null) salida[i] = actuales[i];
+      }
+      sh.getRange(2, cProp, n, 3).setValues(salida);
+    } else {
+      const cols = [cProp, cTotal, cRev];
+      cols.forEach(function(col, j){
+        const actual = sh.getRange(2, col, n, 1).getValues();
+        const vals = salida.map(function(r, i){
+          return [r[j] === null ? actual[i][0] : r[j]];
+        });
+        sh.getRange(2, col, n, 1).setValues(vals);
+      });
+    }
+    SpreadsheetApp.flush();
+
+  } catch (e) {
+    // No es crítico: el siguiente syncMain lo corrige
+    Logger.log('  ⚠ No se pudo reflejar el stock en la hoja principal: ' + e.message);
+  }
 }
 
 /* ============================================================

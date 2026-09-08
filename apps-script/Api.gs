@@ -102,8 +102,14 @@ function wmGet_(path, params, opts) {
   let lastErr = null;
 
   for (let attempt = 0; attempt <= WM_CONFIG.MAX_RETRIES; attempt++) {
+    if (cuotaGoogleAgotada_()) {
+      const err = new Error('Google ya reportó la cuota diaria agotada. ' +
+                            'Se reinicia en la madrugada.');
+      err.sinPresupuesto = true;
+      throw err;
+    }
     if (!gastarFetch_()) {
-      const err = new Error('Presupuesto diario de llamadas agotado (' +
+      const err = new Error('Presupuesto propio agotado (' +
                             WM_CONFIG.DAILY_FETCH_BUDGET + '). Se reinicia mañana.');
       err.sinPresupuesto = true;
       throw err;
@@ -116,7 +122,15 @@ function wmGet_(path, params, opts) {
         muteHttpExceptions: true,
       });
     } catch (e) {
-      lastErr = 'NETWORK: ' + e.message;
+      const msg = String(e && e.message || e);
+      // Reintentar con la cuota agotada solo empeora las cosas
+      if (esErrorDeCuota_(msg)) {
+        marcarCuotaAgotada_();
+        const err = new Error('Cuota diaria de Google agotada: ' + msg);
+        err.sinPresupuesto = true;
+        throw err;
+      }
+      lastErr = 'NETWORK: ' + msg;
       Utilities.sleep(WM_CONFIG.RETRY_BASE_MS * Math.pow(2, attempt));
       continue;
     }
@@ -508,6 +522,9 @@ function categoriaDeShelf_(ruta, productType) {
  * Un SKU que falla se marca y se reintenta en el siguiente ciclo.
  */
 function getInventoryForSku(sku) {
+  if (cuotaGoogleAgotada_()) {
+    return { ok: false, qty: '', unit: '', code: 'CUOTA_GOOGLE', sinPresupuesto: true };
+  }
   if (!gastarFetch_()) {
     return { ok: false, qty: '', unit: '', code: 'SIN_PRESUPUESTO', sinPresupuesto: true };
   }
@@ -545,8 +562,57 @@ function getInventoryForSku(sku) {
     return { ok: false, qty: '', unit: '', code: code, throttled: (code === 429) };
 
   } catch (e) {
-    return { ok: false, qty: '', unit: '', code: 'NET' };
+    // NO tragarse el mensaje: aquí es donde aparece "Service invoked too
+    // many times for one day", que es la causa más común y la más
+    // importante de distinguir de un simple problema de red.
+    const msg = String(e && e.message || e);
+    if (esErrorDeCuota_(msg)) {
+      marcarCuotaAgotada_();
+      return { ok: false, qty: '', unit: '', code: 'CUOTA_GOOGLE',
+               sinPresupuesto: true, detalle: msg };
+    }
+    return { ok: false, qty: '', unit: '', code: 'NET', detalle: msg };
   }
+}
+
+/* ==============================================================
+   Detección de cuota agotada del lado de Google
+
+   Nuestro contador solo sabe de las llamadas que hizo él. Si el
+   script ya venía gastando cuota antes de que existiera —o si
+   algo más de la cuenta la consume— el contador dice que hay
+   presupuesto cuando Google ya cerró.
+
+   La única señal confiable es el error que devuelve Google.
+   Cuando aparece, marcamos el día como agotado y dejamos de
+   intentar hasta mañana.
+   ============================================================== */
+
+function esErrorDeCuota_(msg) {
+  const m = String(msg || '').toLowerCase();
+  return m.indexOf('too many times') >= 0
+      || m.indexOf('demasiadas veces') >= 0
+      || m.indexOf('service invoked too many') >= 0
+      || m.indexOf('quota') >= 0 && m.indexOf('exceed') >= 0;
+}
+
+function marcarCuotaAgotada_() {
+  const props = PropertiesService.getScriptProperties();
+  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+  props.setProperty('CUOTA_AGOTADA_DIA', hoy);
+  Logger.log('  🛑 Google reportó cuota agotada. Se detienen las llamadas hasta mañana.');
+}
+
+function cuotaGoogleAgotada_() {
+  const props = PropertiesService.getScriptProperties();
+  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+  return props.getProperty('CUOTA_AGOTADA_DIA') === hoy;
+}
+
+/** Limpia la marca. Úsalo si sabes que Google ya reinició la cuota. */
+function limpiarMarcaDeCuota() {
+  PropertiesService.getScriptProperties().deleteProperty('CUOTA_AGOTADA_DIA');
+  Logger.log('✅ Marca de cuota agotada eliminada.');
 }
 
 function num_(v) {
