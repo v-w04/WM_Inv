@@ -51,17 +51,52 @@ if errorlevel 1 (
     pause
 )
 
+REM Guardamos donde estabamos, para poder decir despues QUE bajo.
+REM Se usa archivo temporal a proposito: "for /f" con pipe truena
+REM cuando la ruta de git trae espacios (el git de GitHub Desktop).
+set "ANTES="
+"!GIT!" rev-parse HEAD > "%TEMP%\wm_antes.txt" 2>nul
+if exist "%TEMP%\wm_antes.txt" set /p ANTES=<"%TEMP%\wm_antes.txt"
+del "%TEMP%\wm_antes.txt" >nul 2>&1
+
 echo.
 echo  [2/2] Bajando de origin...
 "!GIT!" pull origin main
 if errorlevel 1 goto PULLFAIL
+
+set "DESPUES="
+"!GIT!" rev-parse HEAD > "%TEMP%\wm_despues.txt" 2>nul
+if exist "%TEMP%\wm_despues.txt" set /p DESPUES=<"%TEMP%\wm_despues.txt"
+del "%TEMP%\wm_despues.txt" >nul 2>&1
 
 echo.
 echo  =======================================================
 echo    ACTUALIZADO
 echo  =======================================================
 echo.
-echo  Ya tienes la ultima version. Puedes empezar a trabajar.
+
+if not defined ANTES   goto SINCOMPARAR
+if not defined DESPUES goto SINCOMPARAR
+if "!ANTES!"=="!DESPUES!" (
+    echo  No habia nada nuevo. Ya estabas al dia.
+    echo.
+    goto FINOK
+)
+
+echo  Lo que bajo:
+"!GIT!" log --oneline !ANTES!..!DESPUES!
+echo.
+echo  Archivos que cambiaron:
+"!GIT!" diff --name-only !ANTES! !DESPUES!
+echo.
+echo  OJO: si arriba aparece algo de apps-script\ NO tienes que
+echo  volver a subirlo. Ese codigo ya esta en Apps Script desde
+echo  la otra computadora; esto solo puso tu copia local al dia.
+echo.
+
+:SINCOMPARAR
+:FINOK
+echo  Puedes empezar a trabajar.
 echo.
 pause
 exit /b 0
