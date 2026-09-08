@@ -17,17 +17,33 @@
    respondiendo aunque los triggers ya se hayan gastado lo suyo.
    ============================================================== */
 
+/**
+ * El contador y la marca de cuota van en UserProperties, NO en
+ * ScriptProperties.
+ *
+ * La cuota de UrlFetch en Apps Script se cobra por USUARIO, no por script:
+ * los triggers gastan la del dueño que los instaló, y una función corrida a
+ * mano gasta la de quien la corre. Guardar esto en ScriptProperties hacía
+ * que una cuenta agotada bloqueara a todas las demás sin motivo.
+ */
+function propsUsuario_() {
+  return PropertiesService.getUserProperties();
+}
+
+function hoyMx_() {
+  return Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+}
+
 /** Suma 1 al contador del día. Devuelve false si ya no hay presupuesto. */
 function gastarFetch_() {
-  const props = PropertiesService.getScriptProperties();
-  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
+  const props = propsUsuario_();
+  const hoy = hoyMx_();
   const dia = props.getProperty(WM_CONFIG.PROP_FETCH_DATE);
 
   let n = 0;
   if (dia === hoy) {
     n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
   } else {
-    // Día nuevo: se reinicia
     props.setProperty(WM_CONFIG.PROP_FETCH_DATE, hoy);
   }
 
@@ -37,11 +53,12 @@ function gastarFetch_() {
   return true;
 }
 
-/** Cuántas llamadas quedan hoy */
+/** Cuántas llamadas quedan hoy para ESTA cuenta */
 function fetchRestantes_() {
-  const props = PropertiesService.getScriptProperties();
-  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
-  if (props.getProperty(WM_CONFIG.PROP_FETCH_DATE) !== hoy) return WM_CONFIG.DAILY_FETCH_BUDGET;
+  const props = propsUsuario_();
+  if (props.getProperty(WM_CONFIG.PROP_FETCH_DATE) !== hoyMx_()) {
+    return WM_CONFIG.DAILY_FETCH_BUDGET;
+  }
   const n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
   return Math.max(0, WM_CONFIG.DAILY_FETCH_BUDGET - n);
 }
@@ -596,23 +613,36 @@ function esErrorDeCuota_(msg) {
       || m.indexOf('quota') >= 0 && m.indexOf('exceed') >= 0;
 }
 
+/** Marca la cuota agotada SOLO para la cuenta que la agotó */
 function marcarCuotaAgotada_() {
-  const props = PropertiesService.getScriptProperties();
-  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
-  props.setProperty('CUOTA_AGOTADA_DIA', hoy);
-  Logger.log('  🛑 Google reportó cuota agotada. Se detienen las llamadas hasta mañana.');
+  propsUsuario_().setProperty('CUOTA_AGOTADA_DIA', hoyMx_());
+  Logger.log('  🛑 Google reportó cuota agotada para esta cuenta.');
+  Logger.log('     Se detienen las llamadas hasta mañana.');
 }
 
 function cuotaGoogleAgotada_() {
-  const props = PropertiesService.getScriptProperties();
-  const hoy = Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
-  return props.getProperty('CUOTA_AGOTADA_DIA') === hoy;
+  return propsUsuario_().getProperty('CUOTA_AGOTADA_DIA') === hoyMx_();
 }
 
-/** Limpia la marca. Úsalo si sabes que Google ya reinició la cuota. */
+/** Limpia la marca de ESTA cuenta */
 function limpiarMarcaDeCuota() {
-  PropertiesService.getScriptProperties().deleteProperty('CUOTA_AGOTADA_DIA');
-  Logger.log('✅ Marca de cuota agotada eliminada.');
+  const p = propsUsuario_();
+  p.deleteProperty('CUOTA_AGOTADA_DIA');
+  p.deleteProperty(WM_CONFIG.PROP_FETCH_COUNT);
+  p.deleteProperty(WM_CONFIG.PROP_FETCH_DATE);
+  Logger.log('✅ Marca y contador limpiados para esta cuenta.');
+}
+
+/**
+ * Migración: borra los rastros viejos que quedaron en ScriptProperties.
+ * Ahí bloqueaban a todas las cuentas por igual.
+ */
+function migrarContadoresAUsuario() {
+  const s = PropertiesService.getScriptProperties();
+  ['CUOTA_AGOTADA_DIA', WM_CONFIG.PROP_FETCH_COUNT, WM_CONFIG.PROP_FETCH_DATE]
+    .forEach(function(k){ s.deleteProperty(k); });
+  Logger.log('✅ Contadores globales eliminados.');
+  Logger.log('   Desde ahora cada cuenta lleva su propia cuenta de llamadas.');
 }
 
 function num_(v) {

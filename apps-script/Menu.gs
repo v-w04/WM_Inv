@@ -73,7 +73,8 @@ function onOpenMenu(e) {
       .addItem('Reintentar WFS avanzado',           'mnu_resetWfs')
       .addItem('Reiniciar barrido desde cero',      'mnu_reiniciarBarrido')
       .addItem('Reiniciar contador de llamadas',    'mnu_reiniciarContador')
-      .addItem('Quitar marca de cuota agotada',     'mnu_limpiarCuota'))
+      .addItem('Quitar marca de cuota agotada',     'mnu_limpiarCuota')
+      .addItem('Limpiar contadores viejos (1 vez)', 'mnu_migrarContadores'))
 
     .addSeparator()
     .addItem('🔗 Abrir el dashboard',               'mnu_abrirDashboard')
@@ -389,6 +390,16 @@ function mnu_limpiarCuota() {
   limpiarMarcaDeCuota();
   reiniciarContadorFetch();
   aviso_('Marca quitada y contador en cero.', 5);
+}
+
+function mnu_migrarContadores() {
+  migrarContadoresAUsuario();
+  dialogo_('✅ Contadores limpiados',
+    'Los contadores viejos estaban guardados a nivel script, así que una\n' +
+    'cuenta que agotara su cuota bloqueaba a todas las demás.\n\n' +
+    'Ya no. Cada cuenta lleva su propia cuenta de llamadas, que es como\n' +
+    'Google la cobra en realidad.\n\n' +
+    'Esto se corre una sola vez.');
 }
 
 function mnu_abrirDashboard() {
