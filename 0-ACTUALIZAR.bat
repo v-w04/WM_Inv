@@ -29,6 +29,14 @@ if "!GIT!"=="git" (
 )
 
 :GOTGIT
+REM Candado huerfano: si un git anterior murio a medias (o lo dejo abierto
+REM otra herramienta), queda .git\index.lock y TODO git se niega a correr
+REM con "Another git process seems to be running". Se limpia solo.
+if exist ".git\index.lock" (
+    echo  Limpiando candado de git que quedo colgado...
+    del /f /q ".git\index.lock" >nul 2>&1
+)
+
 echo  [1/2] Revisando si tienes cambios sin subir...
 "!GIT!" diff-index --quiet HEAD -- 2>nul
 if errorlevel 1 (
