@@ -40,13 +40,37 @@ const WM_CONFIG = {
   PROP_LAST_CATALOG:  'LAST_CATALOG_RUN',  // timestamp del último catálogo COMPLETO
   PROP_ITEMS_LIMIT:   'ITEMS_PAGE_LIMIT',  // tamaño de página que Walmart sí acepta
   PROP_MASTER_COUNT:  'LAST_MASTER_COUNT', // cuántos SKUs tenía la hoja la última vez
+  PROP_PW_ITER:       'PW_ITERACIONES',    // iteraciones calibradas para esta cuenta
 
   // ------- CacheService keys -------
   CACHE_TOKEN:         'wm_access_token',
   CACHE_INVENTORY:     'wm_inv_v2',
   CACHE_SESSION_PREF:  'sess_',
+  CACHE_LOGIN_FAILS:   'login_fails',
+  CACHE_LOGIN_LAST:    'login_last_fail',
   CACHE_TTL_SECONDS:   21600,   // 6 h (máximo de CacheService)
   SESSION_TTL_SECONDS: 43200,   // sesión web = 12 h
+
+  // ------- Seguridad del password del dashboard -------
+  //
+  // El dashboard vive en una URL pública: el password ES la puerta.
+  // Un SHA-256 pelón se rompe con tablas precalculadas en segundos.
+  // Por eso: sal aleatoria por password + estirado de clave (miles de
+  // iteraciones) para que cada intento le cueste caro al atacante.
+  //
+  // Las iteraciones NO están fijas: se calibran contra la velocidad real
+  // de esta cuenta para que un login tarde ~PW_TARGET_MS. Así el freno
+  // sigue siendo el mismo aunque Google cambie de hardware.
+  PW_TARGET_MS:    400,      // cuánto queremos que cueste UN intento
+  PW_ITER_MIN:     10000,    // piso, aunque la máquina salga lentísima
+  PW_ITER_MAX:     250000,   // techo, para no colgar el login
+
+  // Freno anti fuerza bruta. No es bloqueo permanente a propósito:
+  // sin IP del cliente, un bloqueo duro lo puede disparar cualquiera
+  // desde fuera y dejar a la dueña afuera de su propio dashboard.
+  // En vez de eso, la espera crece y la ventana expira sola.
+  LOGIN_MAX_FAILS:   15,     // tras esto, se rechaza sin siquiera calcular
+  LOGIN_WINDOW_SEC:  900,    // 15 min desde el último fallo
 
   // ------- Triggers -------
   // Calibrado contra la CUOTA DIARIA de UrlFetch (20,000 en cuentas Gmail).

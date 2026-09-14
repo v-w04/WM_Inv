@@ -50,7 +50,9 @@ function onOpenMenu(e) {
     .addSubMenu(ui.createMenu('📊 Estado')
       .addItem('Avance del barrido',                'mnu_progreso')
       .addItem('Llamadas usadas hoy',               'mnu_consumo')
-      .addItem('Triggers activos',                  'mnu_triggers'))
+      .addItem('Triggers activos',                  'mnu_triggers')
+      // Solo LEE: no muestra el hash ni permite cambiar nada.
+      .addItem('Seguridad del dashboard',           'mnu_estadoPassword'))
 
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
       .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
@@ -294,6 +296,14 @@ function mnu_diagPaginacion() {
       'Listo. El detalle quedó en el registro de ejecuciones.\n\n' +
       'Para verlo: en el editor de Apps Script, panel izquierdo →\n' +
       'Ejecuciones → la más reciente.');
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
+
+function mnu_estadoPassword() {
+  try {
+    mostrarTexto_('Seguridad del dashboard', verEstadoPassword());
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }

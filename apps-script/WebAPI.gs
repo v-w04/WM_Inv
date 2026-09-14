@@ -47,10 +47,31 @@ function authed_(p, fn) {
 
 /* ---- Acciones ---- */
 function loginAction_(p) {
-  if (!verifyPassword_(p.password)) {
-    Utilities.sleep(1500);   // freno anti brute-force
-    return json_({ ok: false, error: 'Contraseña incorrecta' });
+  // Si ya se pasó de intentos, ni siquiera calculamos el hash: eso es
+  // justo lo caro, y es lo que un atacante quiere que gastemos.
+  const previos = fallosLogin_();
+  if (previos >= WM_CONFIG.LOGIN_MAX_FAILS) {
+    Utilities.sleep(3000);
+    return json_({
+      ok: false,
+      error: 'Demasiados intentos fallidos. Espera ' +
+             Math.ceil(WM_CONFIG.LOGIN_WINDOW_SEC / 60) +
+             ' minutos y vuelve a intentar.',
+      frenado: true,
+    });
   }
+
+  if (!verifyPassword_(p.password)) {
+    const n = sumarFalloLogin_();
+    Utilities.sleep(esperaPorFallos_(n));   // la espera crece con los fallos
+    return json_({
+      ok: false,
+      error: 'Contraseña incorrecta',
+      intentosRestantes: Math.max(0, WM_CONFIG.LOGIN_MAX_FAILS - n),
+    });
+  }
+
+  limpiarFallosLogin_();
   return json_({ ok: true, token: createSession_(), ttlSec: WM_CONFIG.SESSION_TTL_SECONDS });
 }
 
