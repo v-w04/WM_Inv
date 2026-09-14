@@ -53,7 +53,16 @@ call clasp push --force
 if errorlevel 1 (
     echo.
     echo  ADVERTENCIA: fallo el push a Apps Script.
-    echo  Continuo con GitHub de todos modos.
+    echo.
+    echo  Si el error de arriba menciona "access_token" o
+    echo  "invalid_grant", caduco tu sesion de clasp. Se arregla:
+    echo.
+    echo     1^) Deja que esto termine con GitHub
+    echo     2^) Corre  1-INSTALAR-CLASP.bat
+    echo        ^(entra con la cuenta victor.walmart.04^)
+    echo     3^) Corre  2-SUBIR-A-APPSCRIPT.bat
+    echo.
+    echo  Tus archivos NO se perdieron. GitHub sigue adelante.
     echo.
     pause
 ) else (

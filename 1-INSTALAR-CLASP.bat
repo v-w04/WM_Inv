@@ -33,16 +33,38 @@ echo  =======================================================
 echo    LISTO
 echo  =======================================================
 echo.
-echo  FALTAN 2 COSAS, tambien una sola vez:
+REM Antes aqui salia SIEMPRE "pon tu scriptId en .clasp.json",
+REM incluso cuando el archivo ya lo tenia. En una reinstalacion
+REM (por ejemplo cuando caduca el token de clasp) eso manda a
+REM buscar un problema que no existe. Ahora solo avisa si falta.
+if not exist ".clasp.json" goto SINID
+findstr /C:"PON_AQUI" .clasp.json >nul 2>&1
+if not errorlevel 1 goto SINID
+goto CONID
+
+:SINID
+echo  FALTA UNA COSA:
 echo.
-echo  A^) Activa la Apps Script API en:
+echo  Pon tu scriptId en el archivo .clasp.json
+echo  Lo sacas de la URL del editor de Apps Script,
+echo  entre /projects/ y /edit
+echo.
+goto APIAVISO
+
+:CONID
+echo  Tu .clasp.json ya trae el scriptId. Nada que editar ahi.
+echo.
+
+:APIAVISO
+echo  Si es la PRIMERA vez en esta computadora, activa tambien
+echo  la Apps Script API:
+echo.
 echo     https://script.google.com/home/usersettings
 echo     Prende el switch "Google Apps Script API"
 echo.
-echo  B^) Pon tu scriptId en el archivo .clasp.json
-echo     Lo sacas de la URL de tu proyecto de Apps Script
+echo  Si ya la tenias activa, ignora esto.
 echo.
-echo  Despues usa 2-SUBIR-A-APPSCRIPT.bat cada vez.
+echo  Ya puedes usar 5-SUBIR-TODO.bat como siempre.
 echo.
 pause
 exit /b 0

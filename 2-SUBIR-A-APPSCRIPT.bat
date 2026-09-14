@@ -77,6 +77,15 @@ echo.
 echo  - "Invalid credentials" o "not logged in"
 echo    Vuelve a correr 1-INSTALAR-CLASP.bat
 echo.
+echo  - "Cannot read properties of undefined ^(access_token^)"
+echo    o "invalid_grant": caduco tu sesion de clasp.
+echo    Borra el token viejo y vuelve a entrar:
+echo.
+echo       del "%%USERPROFILE%%\.clasprc.json"
+echo       1-INSTALAR-CLASP.bat
+echo.
+echo    Entra con la cuenta victor.walmart.04
+echo.
 echo  - "script not found" o "Requested entity was not found"
 echo    Revisa que el scriptId en .clasp.json este correcto
 echo.
