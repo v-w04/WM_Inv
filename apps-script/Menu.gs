@@ -62,7 +62,8 @@ function onOpenMenu(e) {
       .addItem('Probar login con Walmart',          'mnu_testAuth')
       .addItem('Probar todos los endpoints',        'mnu_diagEndpoints')
       .addItem('Probar paginación del catálogo',    'mnu_diagPaginacion')
-      .addItem('¿Hay reporte masivo?  (ahorro)',    'mnu_diagReportes'))
+      .addItem('¿Hay reporte masivo?  (ahorro)',    'mnu_diagReportes')
+      .addItem('Reportes — ronda 2',                'mnu_diagReportes2'))
 
     .addSeparator()
 
@@ -319,6 +320,20 @@ function mnu_diagReportes() {
       'Ejecuciones → la más reciente.\n\n' +
       'Si alguna prueba salió ✅, cópiame el log: se puede cambiar\n' +
       'el barrido de 3,341 llamadas a 2 o 3.');
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
+
+function mnu_diagReportes2() {
+  aviso_('Explorando la API de reportes…', 25);
+  try {
+    diagnosticarReportes2();
+    dialogo_('Reportes — ronda 2',
+      'Listo. El detalle quedó en el registro de ejecuciones.\n\n' +
+      'Editor de Apps Script → panel izquierdo → Ejecuciones →\n' +
+      'la corrida más reciente.\n\n' +
+      'Cópiame TODO el log. Con eso escribo el barrido nuevo.');
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }

@@ -36,6 +36,15 @@ const WM_CONFIG = {
   SHEET_REGULAR: 'Inv_Normal',      // inventario no-WFS (se llena por partes)
   SHEET_LOG:     'Sync_Log',
 
+  // ------- Bitácora -------
+  // Crece ~144 filas al día (96 syncMain + 48 chunk).
+  // 30 días ≈ 4,300 filas: suficiente para rastrear algo que se rompió
+  // mientras nadie veía, y chico para la hoja.
+  // No se poda en cada corrida (deleteRows es caro): solo cuando pasa
+  // de LOG_MAX_FILAS, o sea como una vez cada 5 días.
+  LOG_DIAS:      30,
+  LOG_MAX_FILAS: 5000,
+
   // ------- PropertiesService keys -------
   PROP_CLIENT_ID:     'WM_CLIENT_ID',
   PROP_CLIENT_SECRET: 'WM_CLIENT_SECRET',

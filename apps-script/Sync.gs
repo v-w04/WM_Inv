@@ -978,7 +978,47 @@ function logRun_(tipo, count, elapsed, nota) {
       sh.appendRow(['Timestamp', 'Proceso', 'Filas', 'Segundos', 'Nota']);
     }
     sh.appendRow([new Date(), tipo, count, elapsed, nota || '']);
+    podarLog_(sh);
   } catch (e) {}
+}
+
+/**
+ * Tira las filas de bitácora más viejas que LOG_DIAS.
+ *
+ * Solo hace trabajo cuando la hoja pasa de LOG_MAX_FILAS. El resto de
+ * las veces cuesta un getLastRow() y se sale — `deleteRows` es caro y
+ * no tiene caso pagarlo en cada corrida.
+ *
+ * La bitácora es el ÚNICO rastro forense que hay: si algo se rompió un
+ * martes y lo notas el viernes, esto es lo que se revisa. Por eso poda
+ * por FECHA y no por cantidad, y nunca deja menos de ~1 día.
+ */
+function podarLog_(sh) {
+  const last = sh.getLastRow();
+  if (last <= WM_CONFIG.LOG_MAX_FILAS) return;
+
+  const n = last - 1;                       // sin el encabezado
+  const corte = Date.now() - WM_CONFIG.LOG_DIAS * 86400000;
+  const fechas = sh.getRange(2, 1, n, 1).getValues();
+
+  // La bitácora se escribe con appendRow, así que está en orden.
+  // Se cuenta la racha inicial de filas viejas y se corta ahí.
+  let aBorrar = 0;
+  for (let i = 0; i < n; i++) {
+    const t = (fechas[i][0] instanceof Date) ? fechas[i][0].getTime() : 0;
+    if (t && t >= corte) break;
+    aBorrar++;
+  }
+
+  // Red de seguridad: si las fechas vinieran raras (alguien ordenó la
+  // hoja a mano, o quedaron celdas de texto), esto evita vaciarla.
+  const MINIMO = 200;
+  if (n - aBorrar < MINIMO) aBorrar = Math.max(0, n - MINIMO);
+  if (aBorrar <= 0) return;
+
+  sh.deleteRows(2, aBorrar);
+  Logger.log('  🧹 Bitácora podada: ' + aBorrar + ' filas de más de ' +
+             WM_CONFIG.LOG_DIAS + ' días. Quedan ' + (n - aBorrar) + '.');
 }
 
 /* ============================================================

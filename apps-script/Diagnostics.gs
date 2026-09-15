@@ -705,3 +705,157 @@ function diagnosticarReportes() {
   p('');
   p('👉 Copia TODO este log y pásamelo.');
 }
+
+/* ============================================================
+   RONDA 2 — LA FORMA EXACTA DE LA API DE REPORTES
+
+   La ronda 1 confirmó que /v3/reports/reportRequests responde 200
+   y que el tipo en México se llama ITEM_MX (lo delató el nextCursor).
+
+   Antes de reescribir el barrido hace falta saber:
+     · Cómo se llaman los campos de cada solicitud
+     · Qué tipos de reporte acepta esta cuenta (¿hay uno de INVENTARIO?)
+     · Cómo se descarga un reporte ya listo
+
+   Todo con GET. No crea ni cambia nada. Cuesta ~16 llamadas.
+   ============================================================ */
+function diagnosticarReportes2() {
+  const p = function(s){ Logger.log(s); };
+
+  p('══════════════════════════════════════════════════════');
+  p('  API DE REPORTES — RONDA 2');
+  p('══════════════════════════════════════════════════════');
+  p('');
+
+  /* ── 1. La forma cruda de una solicitud ─────────────────── */
+  p('── 1. ¿Cómo se ve una solicitud de reporte? ──');
+  p('');
+  const r1 = probe_('/v3/reports/reportRequests', { limit: 3 });
+  p('   HTTP ' + r1.code);
+  if (r1.ok && r1.body) {
+    // El JSON crudo, cortado para que quepa en el log
+    p('   JSON (primeros 2500 caracteres):');
+    p(r1.body.substring(0, 2500));
+  } else {
+    p('   ' + truncate_(String(r1.body), 300));
+  }
+  p('');
+  Utilities.sleep(400);
+
+  /* ── 2. ¿Qué tipos de reporte acepta? ───────────────────── */
+  p('── 2. ¿Qué tipos de reporte existen para esta cuenta? ──');
+  p('');
+  const tipos = [
+    'ITEM_MX', 'INVENTORY_MX', 'ITEM', 'INVENTORY',
+    'CATALOG_MX', 'BUYBOX_MX', 'ITEM_PERFORMANCE_MX',
+  ];
+  const tiposBuenos = [];
+
+  tipos.forEach(function(t){
+    const r = probe_('/v3/reports/reportRequests', { reportType: t, limit: 1 });
+    let cuantos = '?';
+    if (r.ok && r.data) {
+      cuantos = (r.data.totalCount != null) ? r.data.totalCount : '?';
+      if (Number(cuantos) > 0) tiposBuenos.push(t + '  (' + cuantos + ' reportes)');
+    }
+    p('   ' + (r.ok ? '✅' : '❌') + ' ' + pad_(t, 22) +
+      ' HTTP ' + r.code + (r.ok ? '   totalCount=' + cuantos : ''));
+    if (!r.ok) p('        ' + truncate_(String(r.body).replace(/\s+/g, ' '), 130));
+    Utilities.sleep(300);
+  });
+  p('');
+
+  /* ── 3. Rutas para listar tipos o descargar ─────────────── */
+  p('── 3. Rutas auxiliares ──');
+  p('');
+  const rutas = [
+    ['/v3/reports/reportTypes',      {}],
+    ['/v3/reports/availableReports', {}],
+    ['/v3/reports/reportVersions',   {}],
+  ];
+  rutas.forEach(function(x){
+    const r = probe_(x[0], x[1]);
+    p('   ' + (r.ok ? '✅' : '❌') + ' ' + pad_(x[0], 32) + ' HTTP ' + r.code);
+    if (r.ok) p('        ' + truncate_(describeShape_(r.data), 200));
+    Utilities.sleep(300);
+  });
+  p('');
+
+  /* ── 4. Un reporte YA LISTO: cómo se baja ───────────────── */
+  p('── 4. ¿Se puede descargar uno ya generado? ──');
+  p('');
+
+  let idListo = null, campoId = null, estado = null;
+  if (r1.ok && r1.data) {
+    // El arreglo puede llamarse requests, reportRequests, results...
+    const arr = r1.data.requests || r1.data.reportRequests ||
+                r1.data.results  || r1.data.payload || [];
+    if (arr.length) {
+      const primera = arr[0];
+      p('   Campos de la primera solicitud:');
+      p('     ' + Object.keys(primera).join(', '));
+      p('');
+      // Buscar el id y el estado con los nombres más probables
+      ['requestId', 'reportRequestId', 'id', 'requestID'].forEach(function(k){
+        if (!campoId && primera[k]) { campoId = k; idListo = primera[k]; }
+      });
+      ['requestStatus', 'status', 'reportStatus'].forEach(function(k){
+        if (!estado && primera[k]) estado = String(primera[k]);
+      });
+      p('   id  = ' + (idListo || 'NO LO ENCONTRÉ') +
+        (campoId ? '   (campo "' + campoId + '")' : ''));
+      p('   estado = ' + (estado || '?'));
+      p('');
+    } else {
+      p('   ⚠ No pude identificar el arreglo de solicitudes.');
+      p('   Llaves de primer nivel: ' +
+        Object.keys(r1.data || {}).join(', '));
+      p('');
+    }
+  }
+
+  if (idListo) {
+    const intentos = [
+      ['/v3/reports/reportRequests/' + idListo, {}],
+      ['/v3/reports/downloadReport',            { requestId: idListo }],
+      ['/v3/reports/reportRequests/' + idListo + '/download', {}],
+    ];
+    intentos.forEach(function(x){
+      const r = probe_(x[0], x[1]);
+      p('   ' + (r.ok ? '✅' : '❌') + ' ' + pad_(truncate_(x[0], 46), 48) +
+        ' HTTP ' + r.code);
+      if (r.ok) {
+        if (r.data) {
+          p('        ' + truncate_(describeShape_(r.data), 260));
+        } else {
+          p('        NO es JSON (' + r.body.length + ' bytes) — ' +
+            'esto huele al archivo del reporte 🎯');
+          p('        inicio: ' + truncate_(r.body.substring(0, 200), 200));
+        }
+      } else {
+        p('        ' + truncate_(String(r.body).replace(/\s+/g, ' '), 130));
+      }
+      Utilities.sleep(300);
+    });
+  } else {
+    p('   (sin id no se puede probar la descarga)');
+  }
+
+  /* ── Resumen ────────────────────────────────────────────── */
+  p('');
+  p('══════════════════════════════════════════════════════');
+  p('  RESUMEN');
+  p('══════════════════════════════════════════════════════');
+  if (tiposBuenos.length) {
+    p('  Tipos de reporte CON historial en esta cuenta:');
+    tiposBuenos.forEach(function(t){ p('     ' + t); });
+  } else {
+    p('  Ningún tipo probado trajo reportes.');
+  }
+  p('');
+  p('  Llamadas usadas hoy: ' +
+    (WM_CONFIG.DAILY_FETCH_BUDGET - fetchRestantes_()) +
+    ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
+  p('');
+  p('👉 Copia TODO este log y pásamelo.');
+}
