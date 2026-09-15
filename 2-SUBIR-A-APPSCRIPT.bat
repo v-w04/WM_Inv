@@ -1,4 +1,5 @@
 @echo off
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Subir a Apps Script
 
@@ -29,17 +30,60 @@ echo  =======================================================
 echo    CODIGO ACTUALIZADO EN APPS SCRIPT
 echo  =======================================================
 echo.
-echo  Si solo vas a correr funciones desde el editor,
-echo  ya puedes cerrar esta ventana.
+
+REM No sirve un recordatorio que te obligue a investigar si aplica.
+REM El dashboard (la URL /exec) corre la version PUBLICADA, no el
+REM ultimo codigo subido. Los triggers y el menu del Sheet si corren
+REM el ultimo codigo. Asi que solo hay que publicar cuando cambia
+REM algo que ejecuta el Web App:
+REM   WebAPI.gs  Auth.gs  Sync.gs  Api.gs  Config.gs
+set "GIT=git"
+where git >nul 2>&1
+if errorlevel 1 goto NOSEQUE
+
+set "PUBLICAR="
+"!GIT!" status --porcelain > "%TEMP%\wm_c2.txt" 2>nul
+if not exist "%TEMP%\wm_c2.txt" goto NOSEQUE
+findstr /I /C:"apps-script/WebAPI.gs" "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Auth.gs"   "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Sync.gs"   "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Api.gs"    "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLICAR=1"
+del "%TEMP%\wm_c2.txt" >nul 2>&1
+
+if defined PUBLICAR goto SIPUBLICAR
+echo  No hace falta publicar version: no cambiaste codigo
+echo  que use el dashboard. Ya puedes cerrar.
 echo.
-echo  Si quieres que la URL del dashboard use el codigo nuevo,
-echo  falta publicar la version. En el editor de Apps Script:
+pause
+exit /b 0
+
+:SIPUBLICAR
+echo  -------------------------------------------------------
+echo    FALTA UN PASO: PUBLICAR VERSION
+echo  -------------------------------------------------------
+echo.
+echo  Cambiaste codigo que SI usa el dashboard. Mientras no
+echo  publiques, la URL sigue sirviendo el codigo viejo.
 echo.
 echo    Implementar
 echo    Administrar implementaciones
 echo    icono de lapiz
 echo    Version: Nueva version
 echo    Implementar
+echo.
+echo  Edita la que YA existe. No le des "Nueva implementacion".
+echo.
+pause
+exit /b 0
+
+:NOSEQUE
+REM Sin git no hay forma de saber que cambio. Se dice tal cual,
+REM en vez de soltar un recordatorio generico.
+echo  No pude revisar que archivos cambiaron (no encuentro git).
+echo.
+echo  Regla: solo hay que publicar version si tocaste
+echo  WebAPI.gs, Auth.gs, Sync.gs, Api.gs o Config.gs.
 echo.
 pause
 exit /b 0

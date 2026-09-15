@@ -119,6 +119,21 @@ echo  Archivos con cambios:
 "!GIT!" status --short
 echo.
 
+REM Guardamos QUE cambio, para decidir despues si hace falta
+REM publicar version. El dashboard (la URL /exec) corre la version
+REM PUBLICADA, no el ultimo codigo subido. Los triggers y el menu
+REM del Sheet si corren el ultimo codigo, por eso a ellos no les
+REM afecta. Solo estos archivos los ejecuta el Web App:
+REM   WebAPI.gs  Auth.gs  Sync.gs  Api.gs  Config.gs
+"!GIT!" status --porcelain > "%TEMP%\wm_cambios.txt" 2>nul
+set "PUBLICAR="
+findstr /I /C:"apps-script/WebAPI.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Auth.gs"   "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Sync.gs"   "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Api.gs"    "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
+findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
+del "%TEMP%\wm_cambios.txt" >nul 2>&1
+
 set "MSG="
 set /p "MSG=  Mensaje del commit [Enter para uno automatico]: "
 if "!MSG!"=="" set "MSG=Actualiza dashboard de inventario Walmart"
@@ -146,9 +161,29 @@ echo  Apps Script: codigo actualizado
 echo  GitHub:      https://github.com/v-w04/WM_Inv
 echo  Dashboard:   https://v-w04.github.io/WM_Inv/
 echo.
-echo  RECORDATORIO: si cambiaste el backend y quieres que la
-echo  URL del dashboard lo use, publica una version nueva:
-echo  Implementar - Administrar implementaciones - lapiz -
-echo  Version: Nueva version - Implementar
+if defined PUBLICAR goto SIPUBLICAR
+echo  No hace falta publicar version: no cambiaste codigo
+echo  que use el dashboard.
+echo.
+pause
+exit /b 0
+
+:SIPUBLICAR
+echo  -------------------------------------------------------
+echo    FALTA UN PASO: PUBLICAR VERSION
+echo  -------------------------------------------------------
+echo.
+echo  Cambiaste codigo que SI usa el dashboard. Mientras no
+echo  publiques, la URL sigue sirviendo el codigo viejo.
+echo.
+echo  En el editor de Apps Script:
+echo     Implementar
+echo     Administrar implementaciones
+echo     icono de lapiz
+echo     Version: Nueva version
+echo     Implementar
+echo.
+echo  Edita la que YA existe. No le des "Nueva implementacion":
+echo  eso genera otra URL y deja la tuya huerfana.
 echo.
 pause
