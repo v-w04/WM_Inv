@@ -88,6 +88,7 @@ echo.
 echo   GitHub Pages tarda 1-2 min en publicar.
 echo.
 pause
+call :LOGO
 exit /b 0
 
 :FUGADETECTADA
@@ -152,3 +153,16 @@ echo   x  Revisa el mensaje de arriba.
 echo.
 pause
 exit /b 1
+
+:LOGO
+REM --- Logo animado ---
+REM Va DESPUES del pause a proposito: el logo hace cls, y si corriera
+REM antes borraria el reporte que la usuaria acaba de leer (incluido
+REM el aviso de publicar version). Solo en salidas exitosas.
+REM Si falta node o el .js, no pasa nada: se salta en silencio.
+where node >nul 2>&1
+if errorlevel 1 goto :eof
+if not exist "%~dp0logo-animado.js" goto :eof
+cls
+node "%~dp0logo-animado.js" giro marca 18
+goto :eof

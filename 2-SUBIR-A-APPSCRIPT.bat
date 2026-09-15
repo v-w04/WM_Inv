@@ -54,6 +54,7 @@ echo   Codigo actualizado. No hace falta publicar version:
 echo   no cambiaste nada que use el dashboard.
 echo.
 pause
+call :LOGO
 exit /b 0
 
 :SIPUBLICAR
@@ -72,6 +73,7 @@ echo      Edita la que YA existe. "Nueva implementacion"
 echo      genera otra URL y deja la tuya huerfana.
 echo.
 pause
+call :LOGO
 exit /b 0
 
 :NOSEQUE
@@ -82,6 +84,7 @@ echo   Regla: solo hay que publicar version si tocaste
 echo   WebAPI.gs, Auth.gs, Sync.gs, Api.gs o Config.gs.
 echo.
 pause
+call :LOGO
 exit /b 0
 
 :NOCONFIG
@@ -123,3 +126,16 @@ echo         entra con la cuenta victor.walmart.04
 echo.
 pause
 exit /b 1
+
+:LOGO
+REM --- Logo animado ---
+REM Va DESPUES del pause a proposito: el logo hace cls, y si corriera
+REM antes borraria el reporte que la usuaria acaba de leer (incluido
+REM el aviso de publicar version). Solo en salidas exitosas.
+REM Si falta node o el .js, no pasa nada: se salta en silencio.
+where node >nul 2>&1
+if errorlevel 1 goto :eof
+if not exist "%~dp0logo-animado.js" goto :eof
+cls
+node "%~dp0logo-animado.js" giro marca 18
+goto :eof
