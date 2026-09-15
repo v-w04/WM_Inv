@@ -4,40 +4,24 @@ cd /d "%~dp0"
 title Subir a GitHub
 
 echo.
-echo  =======================================================
-echo    SUBIENDO A GITHUB
-echo  =======================================================
+echo   SUBIR A GITHUB                     solo el frontend
+echo   ----------------------------------------------------
 echo.
 
 REM ================= SEGURO ANTI-CREDENCIALES =================
 REM El repo es publico y git guarda el historial para siempre.
-REM Si alguien puso una credencial real en un .gs, hay que
-REM detenerlo ANTES del commit, no despues.
-
-echo  [0/5] Revisando que no haya credenciales en el codigo...
+echo   [1/4]  Credenciales en el codigo . . . . .
 set FUGA=0
-
 findstr /C:"PON_TU_CLIENT_ID_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 (
-    echo        ALERTA: CLIENT_ID en Auth.gs ya no es el placeholder
-    set FUGA=1
-)
+if errorlevel 1 set FUGA=1
 findstr /C:"PON_TU_CLIENT_SECRET_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 (
-    echo        ALERTA: CLIENT_SECRET en Auth.gs ya no es el placeholder
-    set FUGA=1
-)
+if errorlevel 1 set FUGA=1
 findstr /C:"PON_TU_PASSWORD_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 (
-    echo        ALERTA: PASSWORD en Auth.gs ya no es el placeholder
-    set FUGA=1
-)
-
+if errorlevel 1 set FUGA=1
 if "!FUGA!"=="1" goto FUGADETECTADA
-echo        Limpio.
+echo          limpio
 echo.
 
-REM ================= GIT =================
 set "GIT=git"
 where git >nul 2>&1
 if not errorlevel 1 goto GOTGIT
@@ -49,121 +33,122 @@ if exist "%ProgramFiles%\Git\cmd\git.exe" set "GIT=%ProgramFiles%\Git\cmd\git.ex
 if "!GIT!"=="git" goto NOGIT
 
 :GOTGIT
-REM Candado huerfano: si un git anterior murio a medias (o lo dejo abierto
-REM otra herramienta), queda .git\index.lock y TODO git se niega a correr
-REM con "Another git process seems to be running". Se limpia solo.
-if exist ".git\index.lock" (
-    echo  Limpiando candado de git que quedo colgado...
-    del /f /q ".git\index.lock" >nul 2>&1
-)
+REM Candado huerfano de un git que murio a medias.
+if exist ".git\index.lock" del /f /q ".git\index.lock" >nul 2>&1
 
-echo  [1/5] Estado del repositorio
-"!GIT!" status --short
+echo   [2/4]  Estado del repositorio . . . . . .
+"!GIT!" status --short >nul 2>&1
 if errorlevel 1 goto NOTREPO
-echo.
 
-REM diff-index devuelve 0 si NO hay cambios en archivos ya rastreados.
-REM (Contar con for/f + pipe truena si la ruta de git tiene espacios.)
+REM diff-index devuelve 0 si NO hay cambios en archivos rastreados.
 "!GIT!" diff-index --quiet HEAD -- 2>nul
 if not errorlevel 1 (
-    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_nuevos.txt" 2>nul
-    for %%F in ("%TEMP%\wm_nuevos.txt") do if %%~zF EQU 0 (
-        del "%TEMP%\wm_nuevos.txt" >nul 2>&1
-        echo  No hay cambios que subir. Todo esta al dia.
+    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_n4.txt" 2>nul
+    for %%F in ("%TEMP%\wm_n4.txt") do if %%~zF EQU 0 (
+        del "%TEMP%\wm_n4.txt" >nul 2>&1
+        echo          sin cambios
+        echo.
+        echo   ----------------------------------------------------
+        echo.
+        echo   Todo esta al dia. Nada que subir.
         echo.
         pause
         exit /b 0
     )
-    del "%TEMP%\wm_nuevos.txt" >nul 2>&1
+    del "%TEMP%\wm_n4.txt" >nul 2>&1
 )
+echo.
+echo.
+"!GIT!" status --short
+echo.
 
-echo  [2/5] Preparando commit
+echo   [3/4]  Commit
 echo.
 set "MSG="
-set /p "MSG=  Mensaje del commit [Enter para uno automatico]: "
+set /p "MSG=   Mensaje [Enter = automatico]: "
 if "!MSG!"=="" set "MSG=Actualiza dashboard de inventario Walmart"
 echo.
-
-echo  [3/5] Agregando archivos
 "!GIT!" add -A
 if errorlevel 1 goto FAIL
-
-echo  [4/5] Creando commit
 "!GIT!" commit -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
 if errorlevel 1 goto FAIL
+echo.
 
-echo  [5/5] Subiendo a origin
+echo   [4/4]  Subiendo a origin . . . . . . . . .
+echo.
 "!GIT!" push origin main
 if errorlevel 1 goto PUSHFAIL
 
 echo.
-echo  =======================================================
-echo    SUBIDO A GITHUB
-echo  =======================================================
+echo   ----------------------------------------------------
 echo.
-echo  Repo:      https://github.com/v-w04/WM_Inv
-echo  Dashboard: https://v-w04.github.io/WM_Inv/
+echo   Repo        github.com/v-w04/WM_Inv
+echo   Dashboard   v-w04.github.io/WM_Inv/
 echo.
-echo  GitHub Pages tarda 1-2 minutos en publicar.
+echo   GitHub Pages tarda 1-2 min en publicar.
 echo.
 pause
 exit /b 0
 
 :FUGADETECTADA
+echo          ALERTA
 echo.
-echo  =======================================================
-echo    DETENIDO - POSIBLE CREDENCIAL EN EL CODIGO
-echo  =======================================================
+echo   ----------------------------------------------------
 echo.
-echo  Alguno de los placeholders de Auth.gs fue reemplazado.
-echo  Si ahi quedo una credencial real y la subes, va a quedar
-echo  en el historial publico de git PARA SIEMPRE.
+echo   x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs
 echo.
-echo  QUE HACER:
-echo    1. Abre apps-script\Auth.gs
-echo    2. Regresa los valores a sus placeholders:
-echo         PON_TU_CLIENT_ID_AQUI
-echo         PON_TU_CLIENT_SECRET_AQUI
-echo         PON_TU_PASSWORD_AQUI
-echo    3. Vuelve a correr este archivo
+echo      Un placeholder fue reemplazado. Si ahi quedo una
+echo      credencial real y la subes, queda en el historial
+echo      publico de git PARA SIEMPRE.
 echo.
-echo  Tus credenciales YA estan guardadas en PropertiesService,
-echo  no necesitas dejarlas en el codigo para que funcione.
+echo      Regresa los valores a sus placeholders:
+echo        PON_TU_CLIENT_ID_AQUI
+echo        PON_TU_CLIENT_SECRET_AQUI
+echo        PON_TU_PASSWORD_AQUI
+echo.
+echo      Tus credenciales YA estan en PropertiesService.
+echo      No hacen falta en el codigo.
 echo.
 pause
 exit /b 1
 
 :NOGIT
-echo  ERROR: No encuentro git.
-echo  Instalalo de https://git-scm.com/download/win o usa GitHub Desktop.
+echo   x  NO ENCUENTRO GIT
+echo.
+echo      Instalalo de git-scm.com/download/win
+echo      o usa GitHub Desktop.
 echo.
 pause
 exit /b 1
 
 :NOTREPO
-echo  ERROR: Esta carpeta no es un repositorio de git.
-echo  Abre GitHub Desktop y agregala como repositorio.
+echo          NO es un repositorio
+echo.
+echo   x  Esta carpeta no es un repo de git.
+echo      Abre GitHub Desktop y agregala.
 echo.
 pause
 exit /b 1
 
 :PUSHFAIL
 echo.
-echo  ERROR: fallo el push.
+echo   ----------------------------------------------------
 echo.
-echo  - "Authentication failed"
-echo      Abre GitHub Desktop una vez para renovar la sesion
-echo  - "rejected - non-fast-forward"
-echo      Alguien subio cambios. Corre 0-ACTUALIZAR.bat primero
-echo  - "src refspec main does not match any"
-echo      Tu rama quiza se llama master. Avisame y lo ajusto
+echo   x  FALLO EL PUSH
+echo.
+echo      "Authentication failed"
+echo         abre GitHub Desktop una vez para renovar sesion
+echo      "rejected - non-fast-forward"
+echo         alguien subio cambios: corre 0-ACTUALIZAR.bat
+echo      "src refspec main does not match any"
+echo         tu rama quiza se llama master - avisame
 echo.
 pause
 exit /b 1
 
 :FAIL
 echo.
-echo  ERROR: revisa el mensaje de arriba.
+echo   x  Revisa el mensaje de arriba.
 echo.
 pause
 exit /b 1

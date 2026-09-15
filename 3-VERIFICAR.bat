@@ -1,46 +1,88 @@
 @echo off
+setlocal enabledelayedexpansion
 cd /d "%~dp0"
-title Verificar configuracion de clasp
+title Verificar entorno
 
 echo.
-echo  =======================================================
-echo    VERIFICACION
-echo  =======================================================
+echo   VERIFICAR                      estado de esta PC
+echo   ----------------------------------------------------
 echo.
 
-echo  [1] Node.js
+set FALTA=0
+
+echo   [1/5]  Node.js . . . . . . . . . . . . . .
 where node >nul 2>&1
-if errorlevel 1 (echo      NO instalado) else (node --version)
-echo.
-
-echo  [2] clasp
-where clasp >nul 2>&1
-if errorlevel 1 (echo      NO instalado) else (call clasp --version)
-echo.
-
-echo  [3] Sesion de Google
-if exist "%USERPROFILE%\.clasprc.json" (
-  echo      Sesion iniciada - credenciales encontradas
+if errorlevel 1 (
+    echo          NO instalado
+    set FALTA=1
 ) else (
-  if exist ".clasprc.json" (
-    echo      Sesion iniciada - credenciales locales
-  ) else (
-    echo      NO has iniciado sesion - corre 1-INSTALAR-CLASP.bat
-  )
+    for /f "tokens=*" %%V in ('node --version') do echo          %%V
 )
 echo.
 
-echo  [4] Archivo .clasp.json
-if exist ".clasp.json" (type .clasp.json) else (echo      NO existe)
+echo   [2/5]  clasp . . . . . . . . . . . . . . .
+where clasp >nul 2>&1
+if errorlevel 1 (
+    echo          NO instalado
+    set FALTA=1
+) else (
+    for /f "tokens=*" %%V in ('clasp --version') do echo          %%V
+)
 echo.
 
-echo  [5] Archivos en apps-script
-if exist "apps-script" (dir /b apps-script) else (echo      NO existe la carpeta)
+echo   [3/5]  Sesion de Google . . . . . . . . . .
+if exist "%USERPROFILE%\.clasprc.json" (
+    echo          iniciada
+) else (
+    if exist ".clasprc.json" (
+        echo          iniciada ^(token local^)
+    ) else (
+        echo          NO iniciada
+        set FALTA=1
+    )
+)
 echo.
 
-echo  =======================================================
+echo   [4/5]  .clasp.json . . . . . . . . . . . .
+if not exist ".clasp.json" (
+    echo          NO existe
+    set FALTA=1
+    goto PASO5
+)
+findstr /C:"PON_AQUI" .clasp.json >nul 2>&1
+if not errorlevel 1 (
+    echo          existe, pero le falta el scriptId
+    set FALTA=1
+) else (
+    echo          con scriptId
+)
+
+:PASO5
 echo.
-echo  Si todo lo de arriba se ve bien,
-echo  ya puedes correr 2-SUBIR-A-APPSCRIPT.bat
+echo   [5/5]  Archivos en apps-script . . . . . .
+if not exist "apps-script" (
+    echo          NO existe la carpeta
+    set FALTA=1
+    goto RESUMEN
+)
+set N=0
+for %%F in (apps-script\*.gs) do set /a N+=1
+echo          !N! archivos .gs
+echo.
+for %%F in (apps-script\*.gs) do echo            %%~nxF
+
+:RESUMEN
+echo.
+echo   ----------------------------------------------------
+echo.
+if "!FALTA!"=="1" (
+    echo   !  FALTA ALGO
+    echo.
+    echo      Revisa arriba que dice "NO". Casi todo se
+    echo      arregla corriendo 1-INSTALAR-CLASP.bat
+) else (
+    echo   Todo en orden. Puedes usar 5-SUBIR-TODO.bat
+)
 echo.
 pause
+exit /b 0

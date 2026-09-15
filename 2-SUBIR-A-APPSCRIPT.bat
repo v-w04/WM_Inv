@@ -4,31 +4,29 @@ cd /d "%~dp0"
 title Subir a Apps Script
 
 echo.
-echo  =======================================================
-echo    SUBIENDO CODIGO A APPS SCRIPT
-echo  =======================================================
+echo   SUBIR A APPS SCRIPT                 solo el backend
+echo   ----------------------------------------------------
 echo.
 
 if not exist ".clasp.json" goto NOCONFIG
-
 findstr /C:"PON_AQUI" .clasp.json >nul 2>&1
 if not errorlevel 1 goto NOSCRIPTID
 
-echo  Archivos a subir desde la carpeta apps-script:
+set N=0
+for %%F in (apps-script\*.gs) do set /a N+=1
+echo   Archivos a subir . . . . . . . . . . . . !N! .gs
 echo.
-dir /b apps-script\*.gs
-dir /b apps-script\appsscript.json
+for %%F in (apps-script\*.gs) do echo     %%~nxF
+echo     appsscript.json
 echo.
-echo  -------------------------------------------------------
+echo   ----------------------------------------------------
 echo.
 
 call clasp push --force
 if errorlevel 1 goto PUSHFAIL
 
 echo.
-echo  =======================================================
-echo    CODIGO ACTUALIZADO EN APPS SCRIPT
-echo  =======================================================
+echo   ----------------------------------------------------
 echo.
 
 REM No sirve un recordatorio que te obligue a investigar si aplica.
@@ -52,86 +50,76 @@ findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLI
 del "%TEMP%\wm_c2.txt" >nul 2>&1
 
 if defined PUBLICAR goto SIPUBLICAR
-echo  No hace falta publicar version: no cambiaste codigo
-echo  que use el dashboard. Ya puedes cerrar.
+echo   Codigo actualizado. No hace falta publicar version:
+echo   no cambiaste nada que use el dashboard.
 echo.
 pause
 exit /b 0
 
 :SIPUBLICAR
-echo  -------------------------------------------------------
-echo    FALTA UN PASO: PUBLICAR VERSION
-echo  -------------------------------------------------------
+echo   !  FALTA PUBLICAR VERSION
 echo.
-echo  Cambiaste codigo que SI usa el dashboard. Mientras no
-echo  publiques, la URL sigue sirviendo el codigo viejo.
+echo      Cambiaste codigo que SI usa el dashboard. Mientras
+echo      no publiques, la URL sirve el codigo viejo.
 echo.
-echo    Implementar
-echo    Administrar implementaciones
-echo    icono de lapiz
-echo    Version: Nueva version
-echo    Implementar
+echo      Implementar
+echo      Administrar implementaciones
+echo      icono de lapiz
+echo      Version: Nueva version
+echo      Implementar
 echo.
-echo  Edita la que YA existe. No le des "Nueva implementacion".
+echo      Edita la que YA existe. "Nueva implementacion"
+echo      genera otra URL y deja la tuya huerfana.
 echo.
 pause
 exit /b 0
 
 :NOSEQUE
-REM Sin git no hay forma de saber que cambio. Se dice tal cual,
-REM en vez de soltar un recordatorio generico.
-echo  No pude revisar que archivos cambiaron (no encuentro git).
+echo   Codigo actualizado.
 echo.
-echo  Regla: solo hay que publicar version si tocaste
-echo  WebAPI.gs, Auth.gs, Sync.gs, Api.gs o Config.gs.
+echo   No pude revisar que archivos cambiaron ^(no hay git^).
+echo   Regla: solo hay que publicar version si tocaste
+echo   WebAPI.gs, Auth.gs, Sync.gs, Api.gs o Config.gs.
 echo.
 pause
 exit /b 0
 
 :NOCONFIG
-echo  ERROR: No encuentro el archivo .clasp.json
+echo   x  NO ENCUENTRO .clasp.json
 echo.
-echo  Corre primero 1-INSTALAR-CLASP.bat
+echo      Corre primero 1-INSTALAR-CLASP.bat
 echo.
 pause
 exit /b 1
 
 :NOSCRIPTID
-echo  FALTA: todavia no pusiste tu scriptId en .clasp.json
+echo   x  FALTA EL SCRIPT ID EN .clasp.json
 echo.
-echo  Abre .clasp.json con el Bloc de notas.
-echo  Reemplaza PON_AQUI_TU_SCRIPT_ID con el ID de tu proyecto.
-echo.
-echo  El ID sale de la URL del editor de Apps Script,
-echo  entre /projects/ y /edit
+echo      Abrelo con el Bloc de notas y reemplaza
+echo      PON_AQUI_TU_SCRIPT_ID con el ID de tu proyecto.
+echo      Sale de la URL del editor, entre /projects/ y /edit
 echo.
 pause
 exit /b 1
 
 :PUSHFAIL
 echo.
-echo  ERROR: fallo el push. Revisa el mensaje de arriba.
+echo   ----------------------------------------------------
 echo.
-echo  Errores comunes:
+echo   x  FALLO EL PUSH
 echo.
-echo  - "User has not enabled the Apps Script API"
-echo    Ve a script.google.com/home/usersettings
-echo    y prende el switch de Google Apps Script API
+echo      "User has not enabled the Apps Script API"
+echo         script.google.com/home/usersettings
+echo         prende "Google Apps Script API"
 echo.
-echo  - "Invalid credentials" o "not logged in"
-echo    Vuelve a correr 1-INSTALAR-CLASP.bat
+echo      "Invalid credentials" o "not logged in"
+echo         corre 1-INSTALAR-CLASP.bat
 echo.
-echo  - "Cannot read properties of undefined ^(access_token^)"
-echo    o "invalid_grant": caduco tu sesion de clasp.
-echo    Borra el token viejo y vuelve a entrar:
-echo.
-echo       del "%%USERPROFILE%%\.clasprc.json"
-echo       1-INSTALAR-CLASP.bat
-echo.
-echo    Entra con la cuenta victor.walmart.04
-echo.
-echo  - "script not found" o "Requested entity was not found"
-echo    Revisa que el scriptId en .clasp.json este correcto
+echo      "Cannot read properties of undefined ^(access_token^)"
+echo      o "invalid_grant" - caduco tu sesion de clasp:
+echo         del "%%USERPROFILE%%\.clasprc.json"
+echo         1-INSTALAR-CLASP.bat
+echo         entra con la cuenta victor.walmart.04
 echo.
 pause
 exit /b 1
