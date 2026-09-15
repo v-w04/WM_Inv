@@ -63,7 +63,8 @@ function onOpenMenu(e) {
       .addItem('Probar todos los endpoints',        'mnu_diagEndpoints')
       .addItem('Probar paginación del catálogo',    'mnu_diagPaginacion')
       .addItem('¿Hay reporte masivo?  (ahorro)',    'mnu_diagReportes')
-      .addItem('Reportes — ronda 2',                'mnu_diagReportes2'))
+      .addItem('Reportes — ronda 2',                'mnu_diagReportes2')
+      .addItem('Reportes — ¿qué trae adentro?',     'mnu_diagReportes3'))
 
     .addSeparator()
 
@@ -310,16 +311,13 @@ function mnu_estadoPassword() {
   }
 }
 
+// Los diagnósticos se muestran EN PANTALLA, no en el registro de
+// ejecuciones. Mandar a la usuaria al editor de Apps Script cada vez
+// que quiere leer un resultado es hacerle dar una vuelta de más.
 function mnu_diagReportes() {
   aviso_('Buscando reporte masivo…', 15);
   try {
-    diagnosticarReportes();
-    dialogo_('¿Hay reporte masivo?',
-      'Listo. El detalle quedó en el registro de ejecuciones.\n\n' +
-      'Para verlo: en el editor de Apps Script, panel izquierdo →\n' +
-      'Ejecuciones → la más reciente.\n\n' +
-      'Si alguna prueba salió ✅, cópiame el log: se puede cambiar\n' +
-      'el barrido de 3,341 llamadas a 2 o 3.');
+    mostrarTexto_('¿Hay reporte masivo?', diagnosticarReportes());
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }
@@ -328,12 +326,16 @@ function mnu_diagReportes() {
 function mnu_diagReportes2() {
   aviso_('Explorando la API de reportes…', 25);
   try {
-    diagnosticarReportes2();
-    dialogo_('Reportes — ronda 2',
-      'Listo. El detalle quedó en el registro de ejecuciones.\n\n' +
-      'Editor de Apps Script → panel izquierdo → Ejecuciones →\n' +
-      'la corrida más reciente.\n\n' +
-      'Cópiame TODO el log. Con eso escribo el barrido nuevo.');
+    mostrarTexto_('Reportes — ronda 2', diagnosticarReportes2());
+  } catch (e) {
+    dialogo_('❌ Error', String(e.message));
+  }
+}
+
+function mnu_diagReportes3() {
+  aviso_('Abriendo un reporte de inventario…', 30);
+  try {
+    mostrarTexto_('¿Qué trae el reporte?', diagnosticarReportes3());
   } catch (e) {
     dialogo_('❌ Error', String(e.message));
   }

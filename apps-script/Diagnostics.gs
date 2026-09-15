@@ -151,6 +151,26 @@ function runDiagnostics() {
    Helpers
    ============================================================ */
 
+/**
+ * Recolector de log.
+ *
+ * Antes cada diagnóstico solo escribía con Logger.log, y había que
+ * entrar a "Ejecuciones" en el editor de Apps Script para leerlo.
+ * Ahora además junta el texto para poder mostrarlo en una ventana
+ * sobre el Sheet, que es donde la usuaria ya está parada.
+ */
+function nuevoLog_() {
+  const L = [];
+  const f = function(s) {
+    const t = (s == null) ? '' : String(s);
+    L.push(t);
+    Logger.log(t);
+  };
+  f.texto = function(){ return L.join('\n'); };
+  return f;
+}
+
+
 function probe_(path, params) {
   // Los diagnósticos también gastan cuota. Antes iban directo a
   // UrlFetchApp sin pasar por el contador: una sesión de diagnóstico
@@ -638,7 +658,7 @@ function diagnosticarPaginacion() {
    Cuesta ~8 llamadas.
    ============================================================ */
 function diagnosticarReportes() {
-  const p = function(s){ Logger.log(s); };
+  const p = nuevoLog_();
 
   p('══════════════════════════════════════════════════════');
   p('  ¿EXISTE UN REPORTE MASIVO PARA ESTA CUENTA?');
@@ -703,7 +723,7 @@ function diagnosticarReportes() {
   }
   p('══════════════════════════════════════════════════════');
   p('');
-  p('👉 Copia TODO este log y pásamelo.');
+  return p.texto();
 }
 
 /* ============================================================
@@ -720,7 +740,7 @@ function diagnosticarReportes() {
    Todo con GET. No crea ni cambia nada. Cuesta ~16 llamadas.
    ============================================================ */
 function diagnosticarReportes2() {
-  const p = function(s){ Logger.log(s); };
+  const p = nuevoLog_();
 
   p('══════════════════════════════════════════════════════');
   p('  API DE REPORTES — RONDA 2');
@@ -857,5 +877,176 @@ function diagnosticarReportes2() {
     (WM_CONFIG.DAILY_FETCH_BUDGET - fetchRestantes_()) +
     ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
   p('');
-  p('👉 Copia TODO este log y pásamelo.');
+  return p.texto();
+}
+
+/* ============================================================
+   RONDA 3 — ¿QUÉ TRAE ADENTRO EL REPORTE DE INVENTARIO?
+
+   La ronda 2 confirmó la pieza que faltaba:
+     GET /v3/reports/downloadReport?requestId=X  →  200 + downloadURL
+
+   Falta lo único que decide si esto sirve: ABRIR un reporte de
+   inventario y ver si trae SKU y cantidad. Si los trae, el barrido
+   de 3,341 llamadas se vuelve de 4. Si no, se acabó la idea.
+
+   Todo con GET. No crea reportes ni cambia nada.
+   ============================================================ */
+function diagnosticarReportes3() {
+  const p = nuevoLog_();
+
+  p('══════════════════════════════════════════════════════');
+  p('  ¿QUÉ TRAE EL REPORTE DE INVENTARIO?');
+  p('══════════════════════════════════════════════════════');
+  p('');
+
+  /* ── 1. Los reportes de inventario más recientes ────────── */
+  p('── 1. Reportes INVENTORY_MX disponibles ──');
+  p('');
+
+  const lista = probe_('/v3/reports/reportRequests',
+                       { reportType: 'INVENTORY_MX', limit: 8 });
+  if (!lista.ok || !lista.data) {
+    p('   ❌ HTTP ' + lista.code + ' — ' + truncate_(String(lista.body), 200));
+    p('');
+    p('👉 Copia TODO este texto y pásamelo.');
+    return p.texto();
+  }
+
+  const reqs = lista.data.requests || [];
+  p('   Total en la cuenta: ' + (lista.data.totalCount || '?'));
+  p('');
+
+  let elegido = null;
+  reqs.forEach(function(r, i){
+    const listo = String(r.requestStatus || '') === 'READY';
+    p('   ' + (listo ? '✅' : '⏳') + ' ' + (i + 1) + ') ' +
+      pad_(String(r.reportType || '?'), 14) +
+      ' ' + String(r.requestStatus || '?'));
+    p('        generado: ' + (r.reportGenerationDate || r.requestSubmissionDate || '?'));
+    p('        por:      ' + (r.userId || '?'));
+    if (listo && !elegido) elegido = r;
+  });
+  p('');
+
+  if (!elegido) {
+    p('   ⚠ Ninguno está en READY. No hay nada que abrir.');
+    p('');
+    p('👉 Copia TODO este texto y pásamelo.');
+    return p.texto();
+  }
+
+  p('   Se va a abrir el más reciente que esté listo:');
+  p('     ' + elegido.requestId);
+  p('     generado ' + (elegido.reportGenerationDate || '?'));
+  p('');
+
+  /* ── 2. Pedir la liga de descarga ───────────────────────── */
+  p('── 2. Liga de descarga ──');
+  p('');
+  const dl = probe_('/v3/reports/downloadReport', { requestId: elegido.requestId });
+  if (!dl.ok || !dl.data || !dl.data.downloadURL) {
+    p('   ❌ HTTP ' + dl.code + ' — ' + truncate_(String(dl.body), 250));
+    p('');
+    p('👉 Copia TODO este texto y pásamelo.');
+    return p.texto();
+  }
+  p('   ✅ HTTP 200');
+  p('   Expira: ' + (dl.data.downloadURLExpirationTime || '?'));
+  p('');
+
+  /* ── 3. Bajar el archivo y mirar adentro ────────────────── */
+  p('── 3. El archivo por dentro ──');
+  p('');
+
+  if (!gastarFetch_()) {
+    p('   ⏹ Sin presupuesto de llamadas para bajarlo hoy.');
+    p('');
+    p('👉 Copia TODO este texto y pásamelo.');
+    return p.texto();
+  }
+
+  let blob;
+  try {
+    // La liga viene firmada: NO lleva los headers de Walmart.
+    const resp = UrlFetchApp.fetch(dl.data.downloadURL, {
+      muteHttpExceptions: true,
+      followRedirects: true,
+    });
+    p('   HTTP ' + resp.getResponseCode());
+    blob = resp.getBlob();
+    p('   Tamaño: ' + Math.round(blob.getBytes().length / 1024) + ' KB');
+  } catch (e) {
+    p('   ❌ No se pudo bajar: ' + (e && e.message || e));
+    p('');
+    p('👉 Copia TODO este texto y pásamelo.');
+    return p.texto();
+  } finally {
+    grabarContadorFetch_();
+  }
+
+  // ¿ZIP o texto plano? Un ZIP siempre empieza con "PK".
+  const bytes = blob.getBytes();
+  const esZip = bytes.length > 2 && bytes[0] === 80 && bytes[1] === 75;
+  p('   Formato: ' + (esZip ? 'ZIP' : 'texto plano (CSV/TSV)'));
+  p('');
+
+  let texto = '';
+  try {
+    if (esZip) {
+      const dentro = Utilities.unzip(blob.setContentType('application/zip'));
+      p('   Archivos dentro del ZIP: ' + dentro.length);
+      dentro.forEach(function(f){
+        p('     · ' + f.getName() + '  (' +
+          Math.round(f.getBytes().length / 1024) + ' KB)');
+      });
+      p('');
+      if (dentro.length) texto = dentro[0].getDataAsString();
+    } else {
+      texto = blob.getDataAsString();
+    }
+  } catch (e) {
+    p('   ⚠ No se pudo leer el contenido: ' + (e && e.message || e));
+  }
+
+  if (texto) {
+    const lineas = texto.split(/\r?\n/);
+    p('   Renglones: ' + lineas.length);
+    p('');
+    p('   ENCABEZADO (esto es lo que decide todo):');
+    p('   ' + truncate_(lineas[0] || '(vacío)', 900));
+    p('');
+    p('   Primeras 3 filas de datos:');
+    for (let i = 1; i <= 3 && i < lineas.length; i++) {
+      p('   ' + truncate_(lineas[i], 500));
+    }
+    p('');
+
+    // ¿Están las columnas que el barrido necesita?
+    const enc = String(lineas[0] || '').toLowerCase();
+    const tieneSku = enc.indexOf('sku') >= 0;
+    const tieneQty = enc.indexOf('quantity') >= 0 || enc.indexOf('qty') >= 0 ||
+                     enc.indexOf('cantidad') >= 0 || enc.indexOf('available') >= 0 ||
+                     enc.indexOf('inventory') >= 0;
+    p('   ¿Trae SKU?      ' + (tieneSku ? '✅ sí' : '❌ no'));
+    p('   ¿Trae cantidad? ' + (tieneQty ? '✅ sí' : '❌ no'));
+    p('');
+    if (tieneSku && tieneQty) {
+      p('   🎯 ESTE REPORTE SIRVE.');
+      p('   El barrido pasaría de 3,341 llamadas por ciclo a 4.');
+    } else {
+      p('   Este reporte no trae lo que el barrido necesita.');
+      p('   Habría que probar otro reportType.');
+    }
+  }
+
+  p('');
+  p('══════════════════════════════════════════════════════');
+  p('  Llamadas usadas hoy: ' +
+    (WM_CONFIG.DAILY_FETCH_BUDGET - fetchRestantes_()) +
+    ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
+  p('══════════════════════════════════════════════════════');
+  p('');
+  p('👉 Copia TODO este texto y pásamelo.');
+  return p.texto();
 }
