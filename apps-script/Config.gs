@@ -13,6 +13,12 @@
  */
 
 const WM_CONFIG = {
+  // ------- Versión -------
+  // 1.0 · congelado el 14/09/2026 tras auditoría completa.
+  // Si tocas algo, sube el número y anota qué cambió.
+  VERSION: '1.0',
+  VERSION_FECHA: '2026-09-14',
+
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',
   SANDBOX_URL: 'https://sandbox.walmartapis.com',
@@ -40,6 +46,8 @@ const WM_CONFIG = {
   PROP_LAST_CATALOG:  'LAST_CATALOG_RUN',  // timestamp del último catálogo COMPLETO
   PROP_ITEMS_LIMIT:   'ITEMS_PAGE_LIMIT',  // tamaño de página que Walmart sí acepta
   PROP_MASTER_COUNT:  'LAST_MASTER_COUNT', // cuántos SKUs tenía la hoja la última vez
+  PROP_WFS_COUNT:     'LAST_WFS_COUNT',    // cuántos SKUs en WFS la última vez
+  PROP_CEDIDAS:       'CHUNK_CEDIDAS',     // corridas seguidas que el barrido cedió
   PROP_PW_ITER:       'PW_ITERACIONES',    // iteraciones calibradas para esta cuenta
 
   // ------- CacheService keys -------

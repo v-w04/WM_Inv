@@ -34,33 +34,70 @@ function hoyMx_() {
   return Utilities.formatDate(new Date(), 'America/Mexico_City', 'yyyy-MM-dd');
 }
 
-/** Suma 1 al contador del día. Devuelve false si ya no hay presupuesto. */
-function gastarFetch_() {
-  const props = propsUsuario_();
-  const hoy = hoyMx_();
-  const dia = props.getProperty(WM_CONFIG.PROP_FETCH_DATE);
+/* ──────────────────────────────────────────────────────────────
+   CONTADOR DE LLAMADAS — con buffer en memoria
 
+   Antes cada SKU costaba 3 operaciones de PropertiesService (2 get
+   + 1 set). Con 9,600 SKUs al día son ~38,000 operaciones contra un
+   límite de 50,000/día. Cruzarlo lanza una excepción a media corrida.
+
+   Ahora el contador vive en memoria durante la ejecución y se graba
+   cada 25 llamadas. Baja las operaciones ~25x. El precio: si Apps
+   Script mata la ejecución se pierden hasta 24 llamadas de la cuenta,
+   y por eso el presupuesto propio (14,000) está bien por debajo del
+   real de Google (20,000).
+   ────────────────────────────────────────────────────────────── */
+var _contadorFetch = null;   // { dia, n, sinGrabar }
+var _flagCuota     = null;   // { dia, valor }
+
+const GRABAR_CADA = 25;
+
+/** Vuelca a PropertiesService lo que lleva el buffer */
+function grabarContadorFetch_() {
+  if (!_contadorFetch || !_contadorFetch.sinGrabar) return;
+  try {
+    propsUsuario_().setProperty(WM_CONFIG.PROP_FETCH_COUNT,
+                                String(_contadorFetch.n));
+    _contadorFetch.sinGrabar = 0;
+  } catch (e) {
+    Logger.log('  ⚠ No se pudo grabar el contador: ' + e.message);
+  }
+}
+
+function cargarContadorFetch_() {
+  const hoy = hoyMx_();
+  if (_contadorFetch && _contadorFetch.dia === hoy) return _contadorFetch;
+
+  const props = propsUsuario_();
+  const dia = props.getProperty(WM_CONFIG.PROP_FETCH_DATE);
   let n = 0;
   if (dia === hoy) {
     n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
   } else {
     props.setProperty(WM_CONFIG.PROP_FETCH_DATE, hoy);
+    props.setProperty(WM_CONFIG.PROP_FETCH_COUNT, '0');
   }
+  _contadorFetch = { dia: hoy, n: n, sinGrabar: 0 };
+  return _contadorFetch;
+}
 
-  if (n >= WM_CONFIG.DAILY_FETCH_BUDGET) return false;
-
-  props.setProperty(WM_CONFIG.PROP_FETCH_COUNT, String(n + 1));
+/** Suma 1 al contador del día. Devuelve false si ya no hay presupuesto. */
+function gastarFetch_() {
+  const c = cargarContadorFetch_();
+  if (c.n >= WM_CONFIG.DAILY_FETCH_BUDGET) {
+    grabarContadorFetch_();
+    return false;
+  }
+  c.n++;
+  c.sinGrabar++;
+  if (c.sinGrabar >= GRABAR_CADA) grabarContadorFetch_();
   return true;
 }
 
 /** Cuántas llamadas quedan hoy para ESTA cuenta */
 function fetchRestantes_() {
-  const props = propsUsuario_();
-  if (props.getProperty(WM_CONFIG.PROP_FETCH_DATE) !== hoyMx_()) {
-    return WM_CONFIG.DAILY_FETCH_BUDGET;
-  }
-  const n = Number(props.getProperty(WM_CONFIG.PROP_FETCH_COUNT) || 0);
-  return Math.max(0, WM_CONFIG.DAILY_FETCH_BUDGET - n);
+  const c = cargarContadorFetch_();
+  return Math.max(0, WM_CONFIG.DAILY_FETCH_BUDGET - c.n);
 }
 
 /** Diagnóstico: cómo va el consumo de hoy */
@@ -113,10 +150,15 @@ function resetItemsLimit() {
 
 /** Reinicia el contador a mano. Úsalo solo si sabes que Google ya lo reseteó. */
 function reiniciarContadorFetch() {
-  const props = PropertiesService.getScriptProperties();
+  // OJO: el contador vive en UserProperties, no en ScriptProperties.
+  // Esto estaba borrando el store equivocado: el menú decía "Contador
+  // en cero" y no pasaba nada, así que la sincronización seguía frenada
+  // y el usuario creía haberla destrabado.
+  const props = propsUsuario_();
   props.deleteProperty(WM_CONFIG.PROP_FETCH_COUNT);
   props.deleteProperty(WM_CONFIG.PROP_FETCH_DATE);
-  Logger.log('✅ Contador reiniciado.');
+  _contadorFetch = null;   // tirar también el buffer en memoria
+  Logger.log('✅ Contador reiniciado para ESTA cuenta.');
 }
 
 function wmHeaders_() {
@@ -239,9 +281,21 @@ function detectWfsEndpoint_() {
   const cached = props.getProperty(WM_CONFIG.PROP_WFS_ENDPOINT);
   if (cached) return cached;
 
-  // Probar el nuevo primero (trae muchos más campos)
+  // Probar el nuevo primero (trae muchos más campos).
+  //
+  // OJO: no basta con que responda 200. Antes cualquier 2xx dejaba
+  // grabado 'new' PARA SIEMPRE; si el endpoint existe pero devuelve
+  // vacío, fetchWfsNew_ regresaba [] en cada corrida y la hoja se
+  // llenaba de ceros falsos. Ahora se exige que traiga inventario.
   try {
-    wmGet_('/v3/wfs/inventory', { limit: 1, offset: 0 });
+    const r = wmGet_('/v3/wfs/inventory', { limit: 1, offset: 0 });
+    const inv = (r && r.payload && r.payload.inventory) || [];
+    if (!inv.length) {
+      Logger.log('  ℹ /v3/wfs/inventory respondió 200 pero sin inventario. ' +
+                 'No se adopta: se queda el legacy.');
+      props.setProperty(WM_CONFIG.PROP_WFS_ENDPOINT, 'legacy');
+      return 'legacy';
+    }
     props.setProperty(WM_CONFIG.PROP_WFS_ENDPOINT, 'new');
     Logger.log('  ✨ WFS endpoint NUEVO disponible — usando /v3/wfs/inventory');
     return 'new';
@@ -277,12 +331,20 @@ function fetchWfsLegacy_() {
   const out = [];
   let offset = 0, total = null, pages = 0;
   const limit = 200, maxPages = 200;
+  let completo = true;
 
   while (pages++ < maxPages) {
     const data = wmGet_('/v3/fulfillment/inventory', { offset: offset, limit: limit });
     const items = (data && data.payload && data.payload.inventory) || [];
+
+    // Antes: si Walmart dejaba de mandar headers.totalCount, `total`
+    // se fijaba al tamaño de la PRIMERA página (200) y el bucle cortaba
+    // ahí — 200 de 463 SKUs, sin avisar. Ahora, sin totalCount, se pagina
+    // hasta que una página venga incompleta, que es la señal real de fin.
     if (total === null) {
-      total = Number((data && data.headers && data.headers.totalCount) || items.length) || items.length;
+      const t = Number((data && data.headers && data.headers.totalCount) || 0);
+      total = t > 0 ? t : null;
+      if (!total) Logger.log('  ℹ WFS sin totalCount: se pagina hasta el final.');
     }
 
     items.forEach(function(it){
@@ -321,11 +383,18 @@ function fetchWfsLegacy_() {
     });
 
     offset += items.length;
-    if (!items.length || offset >= total) break;
+    if (!items.length) break;
+    if (total && offset >= total) break;
+    if (items.length < limit) break;   // página incompleta = fin real
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
 
-  Logger.log('  WFS (legacy): ' + out.length + ' SKUs');
+  if (pages > maxPages) completo = false;
+  if (total && out.length < total) completo = false;
+
+  Logger.log('  WFS (legacy): ' + out.length + ' SKUs' +
+             (completo ? ' ✓' : '  ⚠ lista INCOMPLETA'));
+  out.completo = completo;
   return out;
 }
 
@@ -338,8 +407,10 @@ function fetchWfsNew_() {
   while (pages++ < maxPages) {
     const data = wmGet_('/v3/wfs/inventory', { offset: offset, limit: limit });
     const items = (data && data.payload && data.payload.inventory) || [];
+    // Sin totalCount no se asume que la primera página es todo (ver legacy)
     if (total === null) {
-      total = Number((data && data.headers && data.headers.totalCount) || items.length) || items.length;
+      const t = Number((data && data.headers && data.headers.totalCount) || 0);
+      total = t > 0 ? t : null;
     }
 
     items.forEach(function(entry){
@@ -380,11 +451,16 @@ function fetchWfsNew_() {
     });
 
     offset += items.length;
-    if (!items.length || offset >= total) break;
+    if (!items.length) break;
+    if (total && offset >= total) break;
+    if (items.length < limit) break;   // página incompleta = fin real
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
 
-  Logger.log('  WFS (nuevo): ' + out.length + ' SKUs');
+  const completo = !(pages > maxPages) && !(total && out.length < total);
+  Logger.log('  WFS (nuevo): ' + out.length + ' SKUs' +
+             (completo ? ' ✓' : '  ⚠ lista INCOMPLETA'));
+  out.completo = completo;
   return out;
 }
 
@@ -426,10 +502,15 @@ function getAllItems(deadlineMs) {
   let offset = 0;
   let total = null;
 
+  // ¿Trajimos el catálogo ENTERO? Quien escriba la hoja necesita saberlo:
+  // una lista parcial escrita como buena borra los SKUs que faltaron.
+  let completo = true;
+
   while (pages++ < maxPages) {
     if (deadlineMs && Date.now() > deadlineMs) {
       Logger.log('  ⏱ Catálogo cortado por tiempo en la página ' + pages +
                  ' (' + out.length + ' items). Sube BUDGET_MAIN_MS si pasa seguido.');
+      completo = false;
       break;
     }
 
@@ -443,9 +524,20 @@ function getAllItems(deadlineMs) {
     } catch (e) {
       // Si el problema es la cuota, no hay nada que ajustar: se propaga.
       if (e && e.sinPresupuesto) throw e;
-      // Si nunca hemos confirmado el tamaño de página, el limit grande
-      // es el sospechoso número uno. Bajamos a 50 y lo intentamos otra vez.
-      if (!limitConfirmado && limit > 50) {
+
+      // Bajar a 50 solo si el error de verdad se parece a "ese limit no
+      // me gusta". Antes CUALQUIER error de la primera página (un 500,
+      // un 401, la red) grababa '50' de forma permanente: el catálogo
+      // pasaba de 17 a 67 llamadas por refresco, para siempre, y de paso
+      // hacía mucho más probable pegarle al límite de tiempo.
+      const msg = String((e && e.message) || e).toLowerCase();
+      const esCulpaDelLimit =
+            msg.indexOf('400') >= 0 ||
+            msg.indexOf('limit') >= 0 ||
+            msg.indexOf('invalid') >= 0 ||
+            msg.indexOf('bad request') >= 0;
+
+      if (!limitConfirmado && limit > 50 && esCulpaDelLimit) {
         Logger.log('  ↓ /v3/items no aceptó limit=' + limit +
                    '. Se baja a 50 y se recuerda. (' + (e.message || e) + ')');
         limit = 50;
@@ -503,6 +595,8 @@ function getAllItems(deadlineMs) {
     if (nuevos === 0) {
       Logger.log('  ⚠ La página ' + pages + ' no trajo SKUs nuevos — se corta ' +
                  'para no ciclar. Total: ' + out.length);
+      // Si Walmart dijo cuántos hay y no llegamos, esto es una lista corta.
+      if (total && out.length < total) completo = false;
       break;
     }
     if (total && out.length >= total) break;
@@ -517,9 +611,17 @@ function getAllItems(deadlineMs) {
     Utilities.sleep(WM_CONFIG.PAGE_PACING_MS);
   }
 
+  if (pages > maxPages) completo = false;
   const faltan = total ? (total - out.length) : 0;
+  if (faltan > 0) completo = false;
+
   Logger.log('  Catálogo: ' + out.length + ' items' +
              (faltan > 0 ? '  ⚠ faltaron ' + faltan + ' de ' + total : ' ✓'));
+
+  // La bandera viaja pegada al arreglo. syncMain se niega a reescribir
+  // la hoja con una lista marcada como incompleta.
+  out.completo = completo;
+  out.totalWalmart = total || null;
   return out;
 }
 
@@ -698,13 +800,25 @@ function esErrorDeCuota_(msg) {
 
 /** Marca la cuota agotada SOLO para la cuenta que la agotó */
 function marcarCuotaAgotada_() {
-  propsUsuario_().setProperty('CUOTA_AGOTADA_DIA', hoyMx_());
+  const hoy = hoyMx_();
+  propsUsuario_().setProperty('CUOTA_AGOTADA_DIA', hoy);
+  _flagCuota = { dia: hoy, valor: true };
   Logger.log('  🛑 Google reportó cuota agotada para esta cuenta.');
   Logger.log('     Se detienen las llamadas hasta mañana.');
 }
 
+/** Se consulta una vez por SKU; se cachea en memoria para no gastar Properties */
 function cuotaGoogleAgotada_() {
-  return propsUsuario_().getProperty('CUOTA_AGOTADA_DIA') === hoyMx_();
+  const hoy = hoyMx_();
+  if (_flagCuota && _flagCuota.dia === hoy) return _flagCuota.valor;
+  let v = false;
+  try {
+    v = propsUsuario_().getProperty('CUOTA_AGOTADA_DIA') === hoy;
+  } catch (e) {
+    Logger.log('  ⚠ No se pudo leer la marca de cuota: ' + e.message);
+  }
+  _flagCuota = { dia: hoy, valor: v };
+  return v;
 }
 
 /** Limpia la marca de ESTA cuenta */
@@ -713,6 +827,8 @@ function limpiarMarcaDeCuota() {
   p.deleteProperty('CUOTA_AGOTADA_DIA');
   p.deleteProperty(WM_CONFIG.PROP_FETCH_COUNT);
   p.deleteProperty(WM_CONFIG.PROP_FETCH_DATE);
+  _flagCuota = null;
+  _contadorFetch = null;
   Logger.log('✅ Marca y contador limpiados para esta cuenta.');
 }
 

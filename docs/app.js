@@ -209,8 +209,12 @@ async function apiCall(params, timeoutMs) {
 async function load(force) {
   showLoading(force ? 'Refrescando catálogo y WFS desde Walmart… (~90 seg)' : 'Cargando inventario…');
   try {
-    // El sync completo puede tardar ~2 min, por eso el límite es más largo
-    const res = await apiCall({ action: force ? 'refresh' : 'inventory', token: STATE.token }, 180000);
+    // 300 s, no 180. El backend se da hasta 240 s solo para paginar el
+    // catálogo, más lo que tarde en escribir las dos hojas. Con 180 el
+    // frontend abortaba una corrida que iba BIEN, el usuario reintentaba,
+    // el segundo syncMain no conseguía el lock, y la UI seguía sugiriendo
+    // una falla que no existía.
+    const res = await apiCall({ action: force ? 'refresh' : 'inventory', token: STATE.token }, 300000);
     if (!res.ok) {
       if (res.error === 'unauthorized') return onLogout();
       throw new Error(res.error);

@@ -152,6 +152,19 @@ function runDiagnostics() {
    ============================================================ */
 
 function probe_(path, params) {
+  // Los diagnósticos también gastan cuota. Antes iban directo a
+  // UrlFetchApp sin pasar por el contador: una sesión de diagnóstico
+  // quemaba ~18 llamadas invisibles, y corría incluso con la cuota
+  // ya marcada como agotada, que es justo lo que el resto evita.
+  if (cuotaGoogleAgotada_()) {
+    return { ok: false, code: 'CUOTA_GOOGLE', data: null,
+             body: 'Google ya reporto la cuota agotada hoy para esta cuenta.' };
+  }
+  if (!gastarFetch_()) {
+    return { ok: false, code: 'SIN_PRESUPUESTO', data: null,
+             body: 'Presupuesto propio agotado (' + WM_CONFIG.DAILY_FETCH_BUDGET + ').' };
+  }
+
   try {
     const url = getBaseUrl() + path + toQs_(params);
     const resp = UrlFetchApp.fetch(url, {
@@ -165,7 +178,11 @@ function probe_(path, params) {
     try { data = JSON.parse(body); } catch (_) {}
     return { ok: code >= 200 && code < 300, code: code, body: body, data: data };
   } catch (e) {
-    return { ok: false, code: 'EXCEPTION', body: String(e && e.message || e), data: null };
+    const msg = String(e && e.message || e);
+    if (esErrorDeCuota_(msg)) marcarCuotaAgotada_();
+    return { ok: false, code: 'EXCEPTION', body: msg, data: null };
+  } finally {
+    grabarContadorFetch_();
   }
 }
 

@@ -10,7 +10,30 @@
  *  (La seguridad la da el password + session token, no el ACL.)
  */
 
-function doGet(e)  { return handleRequest_(e); }
+/**
+ * GET solo sirve para `ping`.
+ *
+ * Antes doGet enrutaba a TODO. Eso permitía
+ *   GET /exec?action=login&password=XXXX
+ *   GET /exec?action=inventory&token=YYYY
+ * y una contraseña (o un token de 12 h) en la barra de direcciones
+ * termina en el historial del navegador, en el header Referer hacia
+ * terceros y en los registros de ejecución de Apps Script.
+ *
+ * El frontend siempre usa POST, así que esto no rompe nada.
+ */
+function doGet(e) {
+  const p = (e && e.parameter) || {};
+  const action = p.action || 'ping';
+  if (action !== 'ping') {
+    return json_({
+      ok: false,
+      error: 'Esta acción requiere POST. No se aceptan contraseñas ' +
+             'ni tokens en la URL.',
+    });
+  }
+  return json_({ ok: true, ts: Date.now() });
+}
 
 function doPost(e) {
   if (e && e.postData && e.postData.type && e.postData.type.indexOf('json') >= 0) {
@@ -86,8 +109,18 @@ function logoutAction_(p) {
  */
 function inventoryAction_(force) {
   if (force) {
-    invalidateCache_();
-    syncMain();
+    /* Freno al botón de refrescar. Sin esto, cualquier sesión válida
+       podía gastar el presupuesto diario a botonazos: cada refresh
+       dispara un syncMain completo. Uno cada 5 minutos es de sobra —
+       los triggers ya corren cada 15. */
+    const cache = CacheService.getScriptCache();
+    if (cache.get('refresh_reciente')) {
+      Logger.log('⏭ refresh: hubo uno hace menos de 5 min. Se sirve lo que hay.');
+    } else {
+      cache.put('refresh_reciente', '1', 300);
+      invalidateCache_();
+      syncMain();
+    }
   }
 
   let data = loadRows_();

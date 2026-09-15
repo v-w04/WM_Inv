@@ -66,16 +66,58 @@ function syncMain() {
 
     Logger.log('▶ syncMain arrancando... (' + restan + ' llamadas disponibles hoy)');
 
-    // WFS siempre (rápido: 3 páginas de 200)
+    /* ── WFS ────────────────────────────────────────────────────
+       Aquí un dato faltante NO es un hueco: es una mentira. Si la
+       lista viene corta, cada SKU ausente se escribe como
+       esWFS='NO', wfsDisponible=0 — o sea "no hay nada en la bodega
+       de Walmart" sobre mercancía que sí está ahí.
+       Por eso se compara contra el último conteo bueno conocido.     */
     const wfsList = getAllWfsInventory();
+    const ultimoWfs = Number(propsS.getProperty(WM_CONFIG.PROP_WFS_COUNT) || 0);
+
+    if (wfsList.completo === false ||
+        (ultimoWfs && wfsList.length < ultimoWfs * 0.9)) {
+      Logger.log('⏭ syncMain: el inventario WFS vino corto (' + wfsList.length +
+                 ' contra ' + ultimoWfs + ' conocidos). Escribirlo pondría ' +
+                 'ceros falsos sobre mercancía real. Se salta la corrida.');
+      logRun_('syncMain', 0, ((Date.now() - t0) / 1000).toFixed(1),
+              'SALTADA: WFS incompleto (' + wfsList.length + '/' + ultimoWfs + ')');
+      return { skipped: true, reason: 'WFS incompleto' };
+    }
+
     const wfsBySku = {};
     wfsList.forEach(function(w){ if (w.sku) wfsBySku[w.sku] = w; });
+
+    // El conteo bueno conocido. Es la vara con la que se mide todo
+    // lo que llegue: escribir menos que esto es destruir datos.
+    const ultimoN = Number(propsS.getProperty(WM_CONFIG.PROP_MASTER_COUNT) || 0);
 
     // Catálogo: de la API si toca, de la hoja si no
     let items, origenCat;
     if (tocaCatalogo) {
       items = getAllItems(deadline);
       origenCat = 'API';
+
+      /* ── Guardarraíl del catálogo bajado de la API ──────────────
+         getAllItems corta por tiempo y devuelve lo que alcanzó, sin
+         quejarse. Escribir esa lista parcial hacía dos daños a la vez:
+         writeMasterSheet_ borraba los SKUs faltantes de Inventario, y
+         ensureRegularSheet_ podaba Inv_Normal a esa lista corta —
+         tirando a la basura horas de barrido.
+         Ante una lista incompleta NO se escribe nada: se conserva la
+         hoja de la corrida anterior, que está completa.              */
+      if (items.completo === false) {
+        Logger.log('⏭ syncMain: el catálogo vino INCOMPLETO (' + items.length +
+                   (items.totalWalmart ? ' de ' + items.totalWalmart : '') +
+                   '). No se reescribe la hoja.');
+        return { skipped: true, reason: 'catálogo incompleto' };
+      }
+      if (ultimoN && items.length < ultimoN * 0.95) {
+        Logger.log('⏭ syncMain: el catálogo trajo ' + items.length +
+                   ' contra ' + ultimoN + ' conocidos (menos del 95%). ' +
+                   'Se sospecha truncado: no se reescribe la hoja.');
+        return { skipped: true, reason: 'catálogo sospechosamente corto' };
+      }
     } else {
       items = leerCatalogoDelMaster_();
       origenCat = 'hoja (catálogo de hace ' + minsSinCat.toFixed(0) + ' min)';
@@ -84,8 +126,12 @@ function syncMain() {
       // Si por lo que sea vino incompleta (lectura a media escritura, alguien
       // borrando filas), escribirla de vuelta convertiría un accidente en
       // pérdida de datos. Ante la duda, se paga la API.
-      const ultimoN = Number(propsS.getProperty(WM_CONFIG.PROP_MASTER_COUNT) || 0);
-      if (ultimoN && items.length < ultimoN * 0.5) {
+      //
+      // El umbral es 95%, no 50%. Con 50% una hoja al 60% pasaba, se
+      // reescribía con ese 60%, y PROP_MASTER_COUNT bajaba a ese número:
+      // la siguiente corrida ya aceptaba el 30%. Cada ciclo consolidaba
+      // la pérdida en vez de detenerla.
+      if (ultimoN && items.length < ultimoN * 0.95) {
         Logger.log('  ⚠ La hoja solo trajo ' + items.length + ' SKUs de ~' + ultimoN +
                    '. No se reescribe con eso: se baja el catálogo de la API.');
         items = [];
@@ -105,6 +151,15 @@ function syncMain() {
         items = getAllItems(deadline);
         origenCat = 'API (la hoja no servía)';
         tocaCatalogo = true;
+
+        // Mismo guardarraíl que arriba: por este camino también se
+        // reescribe la hoja, así que también hay que exigir que esté completo.
+        if (items.completo === false ||
+            (ultimoN && items.length < ultimoN * 0.95)) {
+          Logger.log('⏭ syncMain: el catálogo de respaldo tampoco vino ' +
+                     'completo (' + items.length + '). No se reescribe nada.');
+          return { skipped: true, reason: 'catálogo incompleto' };
+        }
       }
     }
 
@@ -162,8 +217,24 @@ function syncMain() {
       });
     });
 
+    /* ── Última reja antes de escribir ──────────────────────────
+       Todo lo de arriba (paginar catálogo, WFS, leer Inv_Normal) ya
+       consumió tiempo. Apps Script mata la ejecución a los 360 s, y
+       si eso pasa a media escritura la hoja queda inconsistente.
+       Si no queda margen holgado para las dos hojas, mejor no empezar:
+       los datos viejos completos valen más que datos nuevos a medias. */
+    const usados = Date.now() - t0;
+    if (usados > 300000) {
+      Logger.log('⏭ syncMain: ya van ' + (usados / 1000).toFixed(0) + ' s. ' +
+                 'No alcanza para escribir con seguridad. Se salta la escritura.');
+      logRun_('syncMain', 0, (usados / 1000).toFixed(1),
+              'SALTADA: sin tiempo para escribir');
+      return { skipped: true, reason: 'sin tiempo para escribir' };
+    }
+
     writeMasterSheet_(rows);
     propsS.setProperty(WM_CONFIG.PROP_MASTER_COUNT, String(rows.length));
+    propsS.setProperty(WM_CONFIG.PROP_WFS_COUNT, String(wfsList.length));
     // ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
     // ya no usa cursor de posición, así que crecer el catálogo o que
     // Walmart devuelva otro orden ya no borra el avance.
@@ -182,6 +253,10 @@ function syncMain() {
     };
 
   } finally {
+    // El contador de llamadas vive en memoria durante la corrida
+    // (para no reventar el limite de PropertiesService). Aqui se vuelca
+    // a disco pase lo que pase, incluso si la corrida murio con error.
+    grabarContadorFetch_();
     lock.releaseLock();
   }
 }
@@ -193,14 +268,29 @@ function syncRegularChunk() {
   // ── Cede el turno si syncMain lleva rato sin poder correr ──
   // Sin esto, el barrido acapara el lock 4 de cada 5 minutos y syncMain
   // se queda sin ejecutar (medido: pasó de 10 min a 123 min entre corridas).
-  const lastMain = Number(PropertiesService.getScriptProperties()
-                      .getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+  const propsCede = PropertiesService.getScriptProperties();
+  const lastMain = Number(propsCede.getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
   const minsSinMain = lastMain ? (Date.now() - lastMain) / 60000 : 999;
+
   if (minsSinMain > WM_CONFIG.REFRESH_INTERVAL_MIN - 1) {
-    Logger.log('⏭ Cediendo el turno a syncMain (lleva ' +
-               minsSinMain.toFixed(0) + ' min sin correr).');
-    return { skipped: true, reason: 'cede a syncMain' };
+    /* Ceder está bien cuando syncMain corrió y falló. Pero si syncMain
+       NUNCA arranca — trigger borrado, o desactivado por Google tras
+       fallos repetidos — minsSinMain solo crece y el barrido cede para
+       siempre: se apagan los dos procesos a la vez, en silencio.
+       Por eso se cede como máximo 3 corridas seguidas.                */
+    const cedidas = Number(propsCede.getProperty(WM_CONFIG.PROP_CEDIDAS) || 0);
+    if (cedidas < 3) {
+      propsCede.setProperty(WM_CONFIG.PROP_CEDIDAS, String(cedidas + 1));
+      Logger.log('⏭ Cediendo el turno a syncMain (lleva ' +
+                 minsSinMain.toFixed(0) + ' min sin correr). ' +
+                 'Cesión ' + (cedidas + 1) + ' de 3.');
+      return { skipped: true, reason: 'cede a syncMain' };
+    }
+    Logger.log('⚠ syncMain lleva ' + minsSinMain.toFixed(0) + ' min sin correr ' +
+               'y ya cedí 3 veces. Parece que sus triggers no existen. ' +
+               'Sigo con el barrido para no apagarnos los dos.');
   }
+  propsCede.setProperty(WM_CONFIG.PROP_CEDIDAS, '0');
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
@@ -278,7 +368,25 @@ function syncRegularChunk() {
 
       const idx = cola[k];
       const sku = String(datos[idx][0]).trim();
-      const inv = getInventoryForSku(sku);
+
+      /* Una excepción aquí (típicamente PropertiesService pasándose de
+         operaciones) escapaba del bucle y se saltaba el bloque de
+         guardado de abajo: hasta 200 llamadas ya pagadas se tiraban
+         sin escribir nada, y se repetía en cada corrida.
+         Ahora el SKU que truena cuenta como error y la corrida sigue. */
+      let inv;
+      try {
+        inv = getInventoryForSku(sku);
+      } catch (e) {
+        Logger.log('  ⚠ Excepción con ' + sku + ': ' + (e && e.message || e));
+        errores++;
+        fallosSeguidos++;
+        if (fallosSeguidos >= 8) {
+          Logger.log('  ⚠ Demasiadas excepciones seguidas — se corta y se guarda.');
+          break;
+        }
+        continue;
+      }
 
       if (inv.sinPresupuesto) {
         sinPresupuesto = true;
@@ -342,6 +450,10 @@ function syncRegularChunk() {
     };
 
   } finally {
+    // El contador de llamadas vive en memoria durante la corrida
+    // (para no reventar el limite de PropertiesService). Aqui se vuelca
+    // a disco pase lo que pase, incluso si la corrida murio con error.
+    grabarContadorFetch_();
     lock.releaseLock();
   }
 }
@@ -530,8 +642,17 @@ function writeMasterSheet_(rows) {
   // convierte "00063790259141" a 63790259141 y se pierden los ceros.
   // Eso es corrección de datos, no estética — y solo se aplica si hace falta.
 
-  sh.clearContents();
-  SpreadsheetApp.flush();
+  /* ── Escritura sin ventana vacía ────────────────────────────
+     Antes esto era: clearContents() → flush() → setValues().
+     Ese flush() COMMITEA la hoja vacía. Si Apps Script mataba la
+     ejecución en esa ventana (pasa: el límite es 6 min y arriba ya
+     se gastaron varios), la hoja se quedaba en cero.
+
+     Ahora se escribe encima y solo después se limpia lo que sobra.
+     En ningún instante la hoja está vacía, y si la ejecución muere
+     a medias lo peor que queda son filas viejas de más abajo.       */
+  const filasAntes = sh.getLastRow();
+  const colsAntes  = sh.getLastColumn();
 
   COLS_TEXTO.forEach(function(col){
     const i = MASTER_COLS.indexOf(col);
@@ -542,6 +663,19 @@ function writeMasterSheet_(rows) {
   });
 
   sh.getRange(1, 1, values.length, MASTER_COLS.length).setValues(values);
+
+  // Sobrantes: filas de más abajo y columnas de más a la derecha
+  if (filasAntes > values.length) {
+    sh.getRange(values.length + 1, 1,
+                filasAntes - values.length,
+                Math.max(colsAntes, MASTER_COLS.length)).clearContent();
+  }
+  if (colsAntes > MASTER_COLS.length) {
+    sh.getRange(1, MASTER_COLS.length + 1,
+                Math.max(filasAntes, values.length),
+                colsAntes - MASTER_COLS.length).clearContent();
+  }
+
   SpreadsheetApp.flush();
 }
 
@@ -571,6 +705,22 @@ function ensureRegularSheet_(skus) {
     });
   }
 
+  /* ── Reja: no podar esta hoja con una lista corta ───────────
+     Esta es la hoja cara. Sus cantidades cuestan una llamada HTTP
+     por SKU y ~9 horas de barrido para rehacerse. Si `skus` viene
+     corta, los SKUs ausentes pierden su cantidad y hay que volver
+     a pagarlas todas.
+     syncMain ya valida el catálogo antes de llegar aquí, pero esta
+     función también se puede llamar desde otro lado: la reja vive
+     donde está el daño, no donde está el llamador.                  */
+  const previoN = Object.keys(previo).length;
+  if (previoN && skus.length < previoN * 0.95) {
+    Logger.log('  ⛔ ensureRegularSheet_: llegaron ' + skus.length +
+               ' SKUs contra ' + previoN + ' que ya tenían dato. ' +
+               'No se poda la hoja; se deja como está.');
+    return;
+  }
+
   const values = [headers].concat(skus.map(function(s){
     const p = previo[s];
     return p ? [s, p[0], p[1], p[2]] : [s, '', '', ''];
@@ -580,13 +730,19 @@ function ensureRegularSheet_(skus) {
   // La única excepción es la columna A como texto: hay SKUs que son
   // puros dígitos y Sheets los convierte a número, perdiendo ceros
   // iniciales — y entonces la consulta a Walmart falla.
-  sh.clearContents();
-  SpreadsheetApp.flush();
-
+  //
+  // Y como en writeMasterSheet_: se escribe ENCIMA y se limpia el
+  // sobrante al final. Nunca hay un instante con la hoja vacía.
+  // Antes, un clearContents()+flush() aquí podía dejar Inv_Normal en
+  // cero, y eso costaba 3,300 llamadas y 9 horas recuperarlo.
   const colSku = sh.getRange(1, 1, Math.max(values.length, 2), 1);
   if (colSku.getNumberFormat() !== '@') colSku.setNumberFormat('@');
 
   sh.getRange(1, 1, values.length, 4).setValues(values);
+
+  if (lastRow > values.length) {
+    sh.getRange(values.length + 1, 1, lastRow - values.length, 4).clearContent();
+  }
   SpreadsheetApp.flush();
 }
 

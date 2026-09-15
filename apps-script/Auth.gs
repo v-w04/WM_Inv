@@ -285,13 +285,25 @@ function fallosLogin_() {
 }
 
 function sumarFalloLogin_() {
-  const c = CacheService.getScriptCache();
-  const n = fallosLogin_() + 1;
-  // put reinicia el TTL: la ventana cuenta desde el ÚLTIMO fallo,
-  // que es lo que se quiere contra un ataque sostenido.
-  c.put(WM_CONFIG.CACHE_LOGIN_FAILS, String(n), WM_CONFIG.LOGIN_WINDOW_SEC);
-  c.put(WM_CONFIG.CACHE_LOGIN_LAST, String(Date.now()), WM_CONFIG.LOGIN_WINDOW_SEC);
-  return n;
+  /* Leer-y-escribir sin candado es una carrera: cada request al Web App
+     es una ejecución independiente, así que N intentos en paralelo leen
+     todos n=0 y todos escriben n=1. El tope de 15 se saltaba con pura
+     concurrencia. Con el lock, los intentos simultáneos se forman. */
+  const lock = LockService.getScriptLock();
+  let conLock = false;
+  try { conLock = lock.tryLock(3000); } catch (_) {}
+
+  try {
+    const c = CacheService.getScriptCache();
+    const n = fallosLogin_() + 1;
+    // put reinicia el TTL: la ventana cuenta desde el ÚLTIMO fallo,
+    // que es lo que se quiere contra un ataque sostenido.
+    c.put(WM_CONFIG.CACHE_LOGIN_FAILS, String(n), WM_CONFIG.LOGIN_WINDOW_SEC);
+    c.put(WM_CONFIG.CACHE_LOGIN_LAST, String(Date.now()), WM_CONFIG.LOGIN_WINDOW_SEC);
+    return n;
+  } finally {
+    if (conLock) { try { lock.releaseLock(); } catch (_) {} }
+  }
 }
 
 function limpiarFallosLogin_() {
