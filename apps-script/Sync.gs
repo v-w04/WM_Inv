@@ -297,30 +297,6 @@ function syncMain() {
       }
     }
 
-    /* ── Incentivos de precio (Killer Deals) ────────────────────
-       Montado en esta corrida a propósito: así no hay un trigger más
-       consumiendo cuota por su cuenta.
-
-       Y montado en las corridas LIGERAS (`!tocaCatalogo`), que son 3
-       de cada 4 y tardan ~5 s. Las corridas con catálogo ya escriben
-       dos hojas grandes; meterle una tercera es justo lo que revienta
-       el servicio de Hojas de cálculo.
-
-       UNA vez al día, en la ventana de la mañana (kdTocaRefrescar_
-       decide): a esa hora la cuota diaria está intacta, así que estas
-       ~5 llamadas salen del presupuesto del día nuevo y no le quitan
-       nada al inventario, que es el que trabaja el resto del día.
-       Y solo si sobra presupuesto y tiempo — el inventario manda,
-       esto es información de oportunidad.                            */
-    try {
-      if (!tocaCatalogo && kdTocaRefrescar_() &&
-          fetchRestantes_() > 300 && (Date.now() - t0) < 120000) {
-        sincronizarKillerDeals(t0 + WM_CONFIG.BUDGET_MAIN_MS);
-      }
-    } catch (eKd) {
-      Logger.log('  ⚠ Killer Deals: ' + eKd.message);
-    }
-
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);

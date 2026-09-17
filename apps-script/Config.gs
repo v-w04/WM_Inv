@@ -15,14 +15,12 @@
 const WM_CONFIG = {
   // ------- Versión -------
   // 1.0 · congelado el 14/09/2026 tras auditoría completa.
-  // 1.1 · 17/09/2026 — triaje de publicación + incentivos:
+  // 1.1 · 17/09/2026 — triaje de SKUs sin publicar:
   //        · se escriben lifecycleStatus y motivoWalmart, que ya
   //          venían de /v3/items y se tiraban (cero llamadas extra)
   //        · hoja "Bloqueados" (de la usuaria) + "No_Publicados"
   //          (generada)
   //        · los SKUs marcados BLOQUEADO salen del barrido
-  //        · hoja "Killer_Deals" desde GET /v3/price/incentives,
-  //          montada en syncMain cada 3 h (~5 llamadas)
   // Si tocas algo, sube el número y anota qué cambió.
   VERSION: '1.1',
   VERSION_FECHA: '2026-09-17',
@@ -56,10 +54,6 @@ const WM_CONFIG = {
   //   NOPUB       la genera el script. Se sobreescribe cada corrida.
   SHEET_BLOQUEADOS: 'Bloqueados',
   SHEET_NOPUB:      'No_Publicados',
-
-  // Incentivos de precio de Walmart (lo que en Seller Center es
-  // "Killer Deals"). Sale de GET /v3/price/incentives.
-  SHEET_KILLER:     'Killer_Deals',
 
   // ------- Bitácora -------
   // Crece ~144 filas al día (96 syncMain + 48 chunk).

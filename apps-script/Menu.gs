@@ -58,12 +58,6 @@ function onOpenMenu(e) {
       .addItem('Refrescar lista de no publicados',  'mnu_refrescarNoPub')
       .addItem('¿Dónde está el dinero parado?',     'mnu_resumenPub'))
 
-    .addSubMenu(ui.createMenu('🏷️ Killer Deals')
-      .addItem('Refrescar ofertas',                 'mnu_refrescarKiller')
-      .addSeparator()
-      .addItem('Ver respuesta cruda de la API',     'mnu_diagIncentivos')
-      .addItem('Tipos de reporte de la cuenta',     'mnu_diagTiposReporte'))
-
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
       .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
       .addItem('SKUs sin dato de inventario',        'mnu_sinDato')
@@ -395,41 +389,6 @@ function mnu_refrescarNoPub() {
 function mnu_resumenPub() {
   try {
     mostrarTexto_('💰 Dinero parado', resumenPublicacion());
-  } catch (e) {
-    dialogo_('Error', String(e && e.message || e));
-  }
-}
-
-/**
- * Baja los incentivos de precio y llena la hoja "Killer_Deals".
- * Gasta ~4-6 llamadas. Todo es GET: no cambia ningún precio ni
- * inscribe nada. Inscribirse sigue siendo a mano en Seller Center.
- */
-function mnu_refrescarKiller() {
-  try {
-    mostrarTexto_('🏷️ Killer Deals', refrescarKillerDeals());
-  } catch (e) {
-    dialogo_('Error', String(e && e.message || e));
-  }
-}
-
-/** JSON crudo de /v3/price/incentives. 2 llamadas. */
-function mnu_diagIncentivos() {
-  try {
-    mostrarTexto_('Incentivos — respuesta cruda', diagnosticarIncentivos());
-  } catch (e) {
-    dialogo_('Error', String(e && e.message || e));
-  }
-}
-
-/**
- * Inventario de tipos de reporte que la cuenta genera de verdad.
- * Es la vía más probable: si Walmart le hace un reporte de ofertas a
- * esta cuenta, aparece aquí.
- */
-function mnu_diagTiposReporte() {
-  try {
-    mostrarTexto_('Tipos de reporte', diagnosticarTiposDeReporte());
   } catch (e) {
     dialogo_('Error', String(e && e.message || e));
   }
