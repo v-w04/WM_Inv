@@ -53,6 +53,101 @@ const PUB_ESTADOS = ['BLOQUEADO', 'MAL_PUBLICADO', 'REPUBLICADO'];
 /** Piso de SKUs que el barrido debe conservar aunque el dictamen diga otra cosa */
 const PUB_MIN_BARRIDO = 100;
 
+/**
+ * Solo estas columnas del master hacen falta para el triaje. Leer las
+ * ~33 que tiene la hoja son ~108,000 celdas de un jalón, y ahí es donde
+ * sale "Se agotó el tiempo de espera del servicio Hojas de cálculo".
+ */
+const PUB_COLS_NECESARIAS = [
+  'sku', 'publishedStatus', 'lifecycleStatus', 'motivoWalmart',
+  'price', 'stockTotal', 'esWFS', 'productName', 'shelf',
+];
+
+/**
+ * Reintenta una operación de Hojas de cálculo cuando el servicio se cansa.
+ *
+ * El timeout del servicio NO es un error del código: es Google diciendo
+ * "ahora no". Casi siempre pasa con reintentar unos segundos después, y
+ * sin esto la usuaria ve una pantalla de error sobre algo que no está roto.
+ *
+ * @param {string} que  descripción para el log
+ * @param {Function} fn operación a ejecutar
+ * @return {*} lo que devuelva fn
+ */
+function pubConReintento_(que, fn) {
+  const ESPERAS = [2000, 5000, 10000];
+  let ultimo = null;
+
+  for (let i = 0; i <= ESPERAS.length; i++) {
+    try {
+      return fn();
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      const esTimeout = /tiempo de espera|timed out|timeout|Service Spreadsheets|servicio Hojas/i.test(msg);
+
+      if (!esTimeout || i === ESPERAS.length) throw e;
+
+      ultimo = msg;
+      Logger.log('  ⏳ ' + que + ': el servicio de Hojas se cansó. ' +
+                 'Reintento ' + (i + 1) + ' de ' + ESPERAS.length +
+                 ' en ' + (ESPERAS[i] / 1000) + 's.');
+      Utilities.sleep(ESPERAS[i]);
+    }
+  }
+  throw new Error(ultimo || 'fallo sin mensaje');
+}
+
+/**
+ * Lee del master SOLO las columnas que el triaje necesita.
+ *
+ * Localiza cada columna por su encabezado y la lee por separado, en vez
+ * de traer el rectángulo completo. Son más llamadas al servicio pero
+ * mucho menos datos, y es la diferencia entre que responda y que se
+ * agote el tiempo de espera.
+ *
+ * @return {Array<Object>}
+ */
+function leerMasterParaPublicacion_() {
+  const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+  if (!sh) return [];
+
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  if (lastRow < 2 || lastCol < 1) return [];
+
+  const cab = pubConReintento_('encabezados del master', function(){
+    return sh.getRange(1, 1, 1, lastCol).getValues()[0].map(String);
+  });
+
+  const n = lastRow - 1;
+  const columnas = {};
+
+  PUB_COLS_NECESARIAS.forEach(function(nombre){
+    const j = cab.indexOf(nombre);
+    if (j < 0) return;           // la hoja todavía no tiene esta columna
+    columnas[nombre] = pubConReintento_('columna ' + nombre, function(){
+      return sh.getRange(2, j + 1, n, 1).getValues();
+    });
+  });
+
+  const nombres = Object.keys(columnas);
+  if (nombres.indexOf('sku') < 0) {
+    throw new Error('La hoja "' + WM_CONFIG.SHEET_MASTER + '" no tiene ' +
+                    'columna "sku". ¿Se reescribió a mano?');
+  }
+
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const o = {};
+    nombres.forEach(function(k){
+      const v = columnas[k][i][0];
+      o[k] = (v instanceof Date) ? v.toISOString() : v;
+    });
+    if (String(o.sku || '').trim()) out.push(o);
+  }
+  return out;
+}
+
 /** Columnas de la hoja que llena la usuaria */
 const BLOQ_COLS = ['sku', 'estado', 'motivo', 'skuNuevo', 'fecha', 'nota'];
 
@@ -178,32 +273,63 @@ function skusExcluidos_(bloq, totalCatalogo) {
  *
  * @return {boolean} true si la creó, false si ya existía
  */
+/** Hasta qué fila se pone el desplegable. Ver la nota de abajo. */
+const BLOQ_FILAS_VALIDADAS = 500;
+
 function crearHojaBloqueados_() {
   const ss = getSpreadsheet_();
-  if (ss.getSheetByName(WM_CONFIG.SHEET_BLOQUEADOS)) return false;
+  let sh = ss.getSheetByName(WM_CONFIG.SHEET_BLOQUEADOS);
+  const yaExistia = !!sh;
 
-  const sh = ss.insertSheet(WM_CONFIG.SHEET_BLOQUEADOS);
-  sh.getRange(1, 1, 1, BLOQ_COLS.length).setValues([BLOQ_COLS]);
+  /* Idempotente a propósito. La primera versión salía en `false` en
+     cuanto la hoja existía, y eso dejaba un agujero: si la creación se
+     quedaba a medias (por ejemplo porque el servicio de Hojas se agotó
+     justo ahí), la hoja quedaba sin encabezados ni desplegable y esta
+     función ya nunca los volvía a poner.
+     Ahora cada pieza se revisa por separado y se pone solo si falta.  */
+  if (!sh) sh = ss.insertSheet(WM_CONFIG.SHEET_BLOQUEADOS);
 
-  // La columna A como texto: hay SKUs que son puros dígitos y Sheets
-  // les come los ceros iniciales, y entonces no empatan con el catálogo.
-  sh.getRange(1, 1, sh.getMaxRows(), 1).setNumberFormat('@');
+  // Encabezados, si faltan
+  const cab = (sh.getLastRow() >= 1)
+    ? sh.getRange(1, 1, 1, BLOQ_COLS.length).getValues()[0].map(String)
+    : [];
+  if (cab[0] !== BLOQ_COLS[0]) {
+    sh.getRange(1, 1, 1, BLOQ_COLS.length).setValues([BLOQ_COLS]);
+    sh.setFrozenRows(1);
+    sh.getRange(1, 1, 1, BLOQ_COLS.length).setFontWeight('bold');
+  }
 
-  // Desplegable en la columna estado. Sin esto se escribe a mano y
-  // cualquier variante ("bloqueado?", "BLOQ") se ignora en silencio.
-  const regla = SpreadsheetApp.newDataValidation()
-    .requireValueInList(PUB_ESTADOS, true)
-    .setAllowInvalid(true)     // permisivo: mejor una nota rara que un bloqueo
-    .setHelpText('BLOQUEADO = ya no me digas nada. ' +
-                 'MAL_PUBLICADO = hay algo que hacer. ' +
-                 'REPUBLICADO = ya lo intenté.')
-    .build();
-  sh.getRange(2, 2, Math.max(sh.getMaxRows() - 1, 1), 1).setDataValidation(regla);
+  /* La columna A como texto: hay SKUs que son puros dígitos y Sheets
+     les come los ceros iniciales, y entonces no empatan con el catálogo.
 
-  sh.setFrozenRows(1);
-  sh.getRange(1, 1, 1, BLOQ_COLS.length).setFontWeight('bold');
+     Rango ACOTADO, no getMaxRows(). Formatear y validar miles de celdas
+     es una de las operaciones que hace que el servicio de Hojas se
+     agote, y era parte de por qué esto tronaba.                        */
+  const filas = BLOQ_FILAS_VALIDADAS;
 
-  return true;
+  if (sh.getRange(2, 1).getNumberFormat() !== '@') {
+    sh.getRange(1, 1, filas + 1, 1).setNumberFormat('@');
+  }
+
+  /* Desplegable en la columna estado, solo si no está ya.
+
+     Va con setAllowInvalid(true) y hasta la fila 500 a propósito: es una
+     comodidad para escribir, no una reja. Si pegas 2,000 filas de golpe,
+     las de abajo no traen desplegable y funcionan igual — leerBloqueados_
+     lee el texto, no la validación. Lo único que importa es que el estado
+     diga BLOQUEADO, MAL_PUBLICADO o REPUBLICADO.                        */
+  if (!sh.getRange(2, 2).getDataValidation()) {
+    const regla = SpreadsheetApp.newDataValidation()
+      .requireValueInList(PUB_ESTADOS, true)
+      .setAllowInvalid(true)
+      .setHelpText('BLOQUEADO = ya no me digas nada. ' +
+                   'MAL_PUBLICADO = hay algo que hacer. ' +
+                   'REPUBLICADO = ya lo intenté.')
+      .build();
+    sh.getRange(2, 2, filas, 1).setDataValidation(regla);
+  }
+
+  return !yaExistia;
 }
 
 /* ============================================================
@@ -330,16 +456,34 @@ function escribirNoPublicados_(rows, bloq) {
  */
 function refrescarNoPublicados() {
   const t0 = Date.now();
+
+  /* ── Candado ────────────────────────────────────────────────
+     Los triggers escriben el Sheet cada 15 y cada 30 minutos. Sin
+     este candado, correr esto desde el menú justo cuando syncMain
+     está a media escritura hace que el servicio de Hojas de cálculo
+     se agote — y el error se ve como si algo estuviera roto.        */
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    return 'AHORA NO SE PUEDE\n\n' +
+           'Hay una sincronización corriendo en este momento.\n' +
+           'Espérate unos 30 segundos y vuelve a darle.\n\n' +
+           '(No es un error: es el candado que evita que dos\n' +
+           'procesos escriban la misma hoja al mismo tiempo.)';
+  }
+
+  try {
   const creada = crearHojaBloqueados_();
 
-  const rows = readSheetAsObjects_(WM_CONFIG.SHEET_MASTER);
+  const rows = leerMasterParaPublicacion_();
   if (!rows.length) {
     return 'La hoja "' + WM_CONFIG.SHEET_MASTER + '" está vacía.\n' +
            'Corre primero "Sincronizar ahora".';
   }
 
   const bloq = leerBloqueados_();
-  const c = escribirNoPublicados_(rows, bloq);
+  const c = pubConReintento_('escribir ' + WM_CONFIG.SHEET_NOPUB, function(){
+    return escribirNoPublicados_(rows, bloq);
+  });
 
   const lineas = [];
   if (creada) {
@@ -377,6 +521,10 @@ function refrescarNoPublicados() {
               'Sin gastar llamadas a la API.');
 
   return lineas.join('\n');
+
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 /**
@@ -386,7 +534,11 @@ function refrescarNoPublicados() {
  * @return {string} reporte para mostrar en pantalla
  */
 function resumenPublicacion() {
-  const rows = readSheetAsObjects_(WM_CONFIG.SHEET_MASTER);
+  /* Este solo LEE, así que no necesita el candado para proteger a
+     nadie — pero sí lee 9 columnas de 3,271 filas mientras un trigger
+     puede estar escribiendo, y de ahí sale el timeout. La lectura ya
+     viene con reintentos. */
+  const rows = leerMasterParaPublicacion_();
   if (!rows.length) {
     return 'La hoja "' + WM_CONFIG.SHEET_MASTER + '" está vacía.\n' +
            'Corre primero "Sincronizar ahora".';

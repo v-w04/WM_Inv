@@ -268,28 +268,53 @@ function syncMain() {
       .map(function(r){ return r.sku; });
     ensureRegularSheet_(paraBarrer, nFuera);
 
-    /* La lista de trabajo de publicación. Va en try aparte: es una
-       comodidad, no el trabajo principal. Si truena, el inventario
-       ya quedó escrito y eso es lo que no se puede perder. */
-    try {
-      const cPub = escribirNoPublicados_(rows, bloq);
-      Logger.log('  Publicación: ' + cPub.total + ' sin publicar · ' +
-                 cPub['POR ANALIZAR'] + ' por analizar · ' +
-                 cPub['BLOQUEADO'] + ' bloqueados' +
-                 (nFuera ? ' (' + nFuera + ' fuera del barrido)' : ''));
-    } catch (ePub) {
-      Logger.log('  ⚠ No pude escribir "' + WM_CONFIG.SHEET_NOPUB + '": ' + ePub.message);
+    /* ── Lista de trabajo de publicación ───────────────────────
+       SOLO cuando se bajó el catálogo de la API.
+
+       Al principio esto corría en cada corrida, y fue un error:
+       `publishedStatus` y `motivoWalmart` únicamente pueden cambiar
+       cuando el catálogo se vuelve a bajar. En las otras 3 de cada 4
+       corridas se reescribían 1,500 filas para dejarlas idénticas.
+
+       Y no era solo desperdicio: con eso syncMain escribía TRES hojas
+       grandes en la misma ejecución (Inventario + Inv_Normal +
+       No_Publicados), y el servicio de Hojas de cálculo se cansa —
+       "Se agotó el tiempo de espera del servicio Hojas de cálculo".
+
+       Va en try aparte: es una comodidad, no el trabajo principal. Si
+       truena, el inventario ya quedó escrito y eso es lo que no se
+       puede perder.                                                   */
+    if (tocaCatalogo) {
+      try {
+        const cPub = escribirNoPublicados_(rows, bloq);
+        Logger.log('  Publicación: ' + cPub.total + ' sin publicar · ' +
+                   cPub['POR ANALIZAR'] + ' por analizar · ' +
+                   cPub['BLOQUEADO'] + ' bloqueados' +
+                   (nFuera ? ' (' + nFuera + ' fuera del barrido)' : ''));
+      } catch (ePub) {
+        Logger.log('  ⚠ No pude escribir "' + WM_CONFIG.SHEET_NOPUB + '": ' +
+                   ePub.message);
+      }
     }
 
     /* ── Incentivos de precio (Killer Deals) ────────────────────
-       Van montados en esta corrida a propósito: así no hay un
-       trigger más consumiendo cuota por su cuenta.
-       Cada 3 h, no cada 15 min — las ofertas duran días. Y solo si
-       sobra presupuesto y tiempo: el inventario manda, esto es
-       información de oportunidad.                                  */
+       Montado en esta corrida a propósito: así no hay un trigger más
+       consumiendo cuota por su cuenta.
+
+       Y montado en las corridas LIGERAS (`!tocaCatalogo`), que son 3
+       de cada 4 y tardan ~5 s. Las corridas con catálogo ya escriben
+       dos hojas grandes; meterle una tercera es justo lo que revienta
+       el servicio de Hojas de cálculo.
+
+       UNA vez al día, en la ventana de la mañana (kdTocaRefrescar_
+       decide): a esa hora la cuota diaria está intacta, así que estas
+       ~5 llamadas salen del presupuesto del día nuevo y no le quitan
+       nada al inventario, que es el que trabaja el resto del día.
+       Y solo si sobra presupuesto y tiempo — el inventario manda,
+       esto es información de oportunidad.                            */
     try {
-      if (kdTocaRefrescar_() && fetchRestantes_() > 300 &&
-          (Date.now() - t0) < 200000) {
+      if (!tocaCatalogo && kdTocaRefrescar_() &&
+          fetchRestantes_() > 300 && (Date.now() - t0) < 120000) {
         sincronizarKillerDeals(t0 + WM_CONFIG.BUDGET_MAIN_MS);
       }
     } catch (eKd) {

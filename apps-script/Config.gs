@@ -40,6 +40,13 @@ const WM_CONFIG = {
   // https://docs.google.com/spreadsheets/d/122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q/edit
   SHEET_ID: '122_hEHeBaa6vYTABhdHdqnJqi_CXtpPB_g9N1d6Fr0Q',
 
+  /* Zona horaria del negocio. Las cuentas que ejecutan esto SIEMPRE
+     son de CDMX, así que se fija aquí en vez de preguntarla.
+     No se usa Session.getScriptTimeZone(): esa es la que Google puso
+     al crear el proyecto (puede ser Los Ángeles o UTC sin que nadie
+     se enterara), y de ella dependen las ventanas de hora. */
+  ZONA: 'America/Mexico_City',
+
   SHEET_MASTER:  'Inventario',      // catálogo + WFS (se reescribe completo)
   SHEET_REGULAR: 'Inv_Normal',      // inventario no-WFS (se llena por partes)
   SHEET_LOG:     'Sync_Log',
