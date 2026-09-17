@@ -54,6 +54,16 @@ function onOpenMenu(e) {
       // Solo LEE: no muestra el hash ni permite cambiar nada.
       .addItem('Seguridad del dashboard',           'mnu_estadoPassword'))
 
+    .addSubMenu(ui.createMenu('📋 Publicación')
+      .addItem('Refrescar lista de no publicados',  'mnu_refrescarNoPub')
+      .addItem('¿Dónde está el dinero parado?',     'mnu_resumenPub'))
+
+    .addSubMenu(ui.createMenu('🏷️ Killer Deals')
+      .addItem('Refrescar ofertas',                 'mnu_refrescarKiller')
+      .addSeparator()
+      .addItem('Ver respuesta cruda de la API',     'mnu_diagIncentivos')
+      .addItem('Tipos de reporte de la cuenta',     'mnu_diagTiposReporte'))
+
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
       .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
       .addItem('SKUs sin dato de inventario',        'mnu_sinDato')
@@ -363,6 +373,66 @@ function mnu_forzarCatalogo() {
   }
   dialogo_('✅ Catálogo actualizado',
     res.count + ' SKUs (' + res.wfs + ' en WFS) en ' + res.elapsedSec + ' seg.');
+}
+
+/* ============================================================
+   Publicación — triaje de SKUs sin publicar
+   ============================================================ */
+
+/**
+ * Regenera "No_Publicados". No cuesta llamadas a la API: lee la hoja
+ * "Inventario" que ya está escrita.
+ */
+function mnu_refrescarNoPub() {
+  try {
+    mostrarTexto_('📋 No publicados', refrescarNoPublicados());
+  } catch (e) {
+    dialogo_('Error', String(e && e.message || e));
+  }
+}
+
+/** Resumen de motivos y dinero parado. Tampoco gasta llamadas. */
+function mnu_resumenPub() {
+  try {
+    mostrarTexto_('💰 Dinero parado', resumenPublicacion());
+  } catch (e) {
+    dialogo_('Error', String(e && e.message || e));
+  }
+}
+
+/**
+ * Baja los incentivos de precio y llena la hoja "Killer_Deals".
+ * Gasta ~4-6 llamadas. Todo es GET: no cambia ningún precio ni
+ * inscribe nada. Inscribirse sigue siendo a mano en Seller Center.
+ */
+function mnu_refrescarKiller() {
+  try {
+    mostrarTexto_('🏷️ Killer Deals', refrescarKillerDeals());
+  } catch (e) {
+    dialogo_('Error', String(e && e.message || e));
+  }
+}
+
+/** JSON crudo de /v3/price/incentives. 2 llamadas. */
+function mnu_diagIncentivos() {
+  try {
+    mostrarTexto_('Incentivos — respuesta cruda', diagnosticarIncentivos());
+  } catch (e) {
+    dialogo_('Error', String(e && e.message || e));
+  }
+}
+
+/**
+ * Inventario de tipos de reporte que la cuenta genera de verdad.
+ * Es la vía más probable: si Walmart le hace un reporte de ofertas a
+ * esta cuenta, aparece aquí.
+ */
+function mnu_diagTiposReporte() {
+  try {
+    mostrarTexto_('Tipos de reporte', diagnosticarTiposDeReporte());
+  } catch (e) {
+    dialogo_('Error', String(e && e.message || e));
+  }
 }
 
 /** Muestra texto largo en una ventana con scroll */

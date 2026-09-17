@@ -171,20 +171,40 @@ function syncMain() {
     // Se lee ANTES de reconstruir Inv_Normal para no perder nada.
     const propioBySku = leerInvNormal_();
 
+    /* ── Tu dictamen de publicación (1.1) ──────────────────────
+       La hoja "Bloqueados" la llenas tú; aquí solo se lee. Si no
+       existe o la lectura falla, el mapa viene vacío y todo se
+       comporta como antes: nadie excluido, nada destruido.         */
+    const bloq = leerBloqueados_();
+    const fuera = skusExcluidos_(bloq, items.length);
+    const nFuera = Object.keys(fuera).length;
+
     // Merge: una fila por SKU del catálogo, con WFS e inventario propio
     const rows = items.map(function(it){
       const w = wfsBySku[it.sku] || {};
       const pr = propioBySku[it.sku] || {};
       const enWfs = !!w.sku;
       const wfsDisp = enWfs ? (w.wfsAvailToSell != null ? Number(w.wfsAvailToSell) : 0) : 0;
+      const dictamen = bloq.mapa[it.sku] || null;
+      const bloqueado = !!fuera[it.sku];
 
-      // El inventario propio se deja VACÍO si nunca se ha consultado.
-      // Un 0 diría "no hay stock"; un hueco dice "todavía no sé", que
-      // es la verdad mientras el barrido no llega a ese SKU.
-      const tienePropio = pr.cantidad !== undefined && pr.cantidad !== '';
+      /* El inventario propio se deja VACÍO si nunca se ha consultado.
+         Un 0 diría "no hay stock"; un hueco dice "todavía no sé", que
+         es la verdad mientras el barrido no llega a ese SKU.
+
+         Y en un SKU BLOQUEADO se blanquea a propósito: sale del
+         barrido, así que su número dejaría de refrescarse. Conservarlo
+         sería peor que no tenerlo — un dato viejo que se ve igual de
+         fresco que los demás. La marca queda en invRevisado.          */
+      const tienePropio = !bloqueado && pr.cantidad !== undefined && pr.cantidad !== '';
       const propio = tienePropio ? Number(pr.cantidad) : '';
 
       return Object.assign({}, it, {
+        lifecycleStatus:  it.lifecycleStatus || '',
+        // Por el camino de la API la clave es unpublishedReasons;
+        // releído de la hoja ya viene como motivoWalmart.
+        motivoWalmart:    it.motivoWalmart || it.unpublishedReasons || '',
+        miEstado:         dictamen ? dictamen.estado : '',
         esWFS:            enWfs ? 'SÍ' : 'NO',
         offerId:          w.offerId || '',
         // Sin WFS = 0 real, no celda vacía. Un hueco se lee como "no sé";
@@ -192,7 +212,7 @@ function syncMain() {
         wfsDisponible:    wfsDisp,
         invNormal:        propio,
         stockTotal:       tienePropio ? (wfsDisp + propio) : wfsDisp,
-        invRevisado:      pr.revisado || '',
+        invRevisado:      bloqueado ? 'bloqueado' : (pr.revisado || ''),
         wfsEnMano:        enWfs ? (w.wfsOnHand != null ? w.wfsOnHand : 0) : 0,
         wfsReservado:     enWfs ? (w.wfsReserved != null ? w.wfsReserved : 0) : 0,
         wfsInbound:       w.wfsInbound != null ? w.wfsInbound : '',
@@ -235,10 +255,47 @@ function syncMain() {
     writeMasterSheet_(rows);
     propsS.setProperty(WM_CONFIG.PROP_MASTER_COUNT, String(rows.length));
     propsS.setProperty(WM_CONFIG.PROP_WFS_COUNT, String(wfsList.length));
-    // ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
-    // ya no usa cursor de posición, así que crecer el catálogo o que
-    // Walmart devuelva otro orden ya no borra el avance.
-    ensureRegularSheet_(rows.map(function(r){ return r.sku; }));
+    /* ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
+       ya no usa cursor de posición, así que crecer el catálogo o que
+       Walmart devuelva otro orden ya no borra el avance.
+
+       Los BLOQUEADOS no entran: cada uno cuesta una llamada por corrida
+       y no se pueden vender. Se le pasa cuántos se quitaron para que la
+       reja del 95% no confunda esta baja legítima con un catálogo
+       truncado.                                                        */
+    const paraBarrer = rows
+      .filter(function(r){ return !fuera[r.sku]; })
+      .map(function(r){ return r.sku; });
+    ensureRegularSheet_(paraBarrer, nFuera);
+
+    /* La lista de trabajo de publicación. Va en try aparte: es una
+       comodidad, no el trabajo principal. Si truena, el inventario
+       ya quedó escrito y eso es lo que no se puede perder. */
+    try {
+      const cPub = escribirNoPublicados_(rows, bloq);
+      Logger.log('  Publicación: ' + cPub.total + ' sin publicar · ' +
+                 cPub['POR ANALIZAR'] + ' por analizar · ' +
+                 cPub['BLOQUEADO'] + ' bloqueados' +
+                 (nFuera ? ' (' + nFuera + ' fuera del barrido)' : ''));
+    } catch (ePub) {
+      Logger.log('  ⚠ No pude escribir "' + WM_CONFIG.SHEET_NOPUB + '": ' + ePub.message);
+    }
+
+    /* ── Incentivos de precio (Killer Deals) ────────────────────
+       Van montados en esta corrida a propósito: así no hay un
+       trigger más consumiendo cuota por su cuenta.
+       Cada 3 h, no cada 15 min — las ofertas duran días. Y solo si
+       sobra presupuesto y tiempo: el inventario manda, esto es
+       información de oportunidad.                                  */
+    try {
+      if (kdTocaRefrescar_() && fetchRestantes_() > 300 &&
+          (Date.now() - t0) < 200000) {
+        sincronizarKillerDeals(t0 + WM_CONFIG.BUDGET_MAIN_MS);
+      }
+    } catch (eKd) {
+      Logger.log('  ⚠ Killer Deals: ' + eKd.message);
+    }
+
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -510,7 +567,15 @@ function reiniciarBarrido() {
 const MASTER_COLS_BASE = [
   // ── Las de uso diario ──
   'sku', 'shelf', 'upc', 'gtin', 'price', 'currency',
-  'publishedStatus', 'esWFS',
+  'publishedStatus',
+  // ── Por qué no está publicado (1.1) ──
+  // Estas tres venían de /v3/items desde siempre y se tiraban a la
+  // basura: Api.gs ya las capturaba pero no estaban en esta lista.
+  // Escribirlas cuesta CERO llamadas extra.
+  'lifecycleStatus',   // ACTIVE / RETIRED / ARCHIVED, según Walmart
+  'motivoWalmart',     // unpublishedReasons: el motivo que da Walmart
+  'miEstado',          // tu dictamen, de la hoja "Bloqueados"
+  'esWFS',
   'wfsDisponible',   // stock en bodega de Walmart (solo SKUs WFS)
   'invNormal',       // stock en TU bodega (los que envías tú)
   'stockTotal',      // la suma — el número que importa de un vistazo
@@ -541,6 +606,12 @@ function getMasterCols_() {
 const CAMPOS_CATALOGO = [
   'sku', 'shelf', 'upc', 'gtin', 'price', 'currency', 'publishedStatus',
   'productName', 'productType', 'shelfCompleto', 'wpid', 'mart',
+  // Vienen de la API igual que los de arriba, así que también hay que
+  // releerlos de la hoja. Si no estuvieran aquí, las 3 de cada 4
+  // corridas que NO bajan el catálogo los dejarían en blanco.
+  'lifecycleStatus', 'motivoWalmart',
+  // 'miEstado' NO va aquí a propósito: no viene de la API, se
+  // recalcula en cada corrida desde la hoja "Bloqueados".
 ];
 
 /** Columnas que Sheets debe tratar como TEXTO (si no, se come los ceros iniciales) */
@@ -688,9 +759,10 @@ function writeMasterSheet_(rows) {
  * Conserva las cantidades ya obtenidas.
  * @return {boolean} true si la lista de SKUs cambió (hay que reiniciar el cursor)
  */
-function ensureRegularSheet_(skus) {
+function ensureRegularSheet_(skus, excluidos) {
   const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
   const headers = ['sku', 'cantidad', 'unidad', 'revisadoEn'];
+  const nExcluidos = Number(excluidos) || 0;
 
   // Conserva por SKU lo ya consultado. Si un SKU sigue existiendo,
   // su cantidad y su fecha se mantienen aunque cambie de posición.
@@ -713,12 +785,24 @@ function ensureRegularSheet_(skus) {
      syncMain ya valida el catálogo antes de llegar aquí, pero esta
      función también se puede llamar desde otro lado: la reja vive
      donde está el daño, no donde está el llamador.                  */
+  /* Los SKUs que se quitaron a propósito (BLOQUEADO) se suman de vuelta
+     antes de comparar. Si no, la primera vez que se bloquean 1,000 SKUs
+     la reja lee "llegaron 2,271 de 3,271" y se niega para siempre: la
+     función quedaría rota justo por hacer su trabajo.
+     Lo que la reja sigue atrapando es el caso real de peligro: una
+     lista corta que NADIE pidió recortar.                              */
   const previoN = Object.keys(previo).length;
-  if (previoN && skus.length < previoN * 0.95) {
+  if (previoN && (skus.length + nExcluidos) < previoN * 0.95) {
     Logger.log('  ⛔ ensureRegularSheet_: llegaron ' + skus.length +
-               ' SKUs contra ' + previoN + ' que ya tenían dato. ' +
-               'No se poda la hoja; se deja como está.');
+               ' SKUs (+' + nExcluidos + ' excluidos a propósito) contra ' +
+               previoN + ' que ya tenían dato. No se poda la hoja; se deja ' +
+               'como está.');
     return;
+  }
+
+  if (nExcluidos) {
+    Logger.log('  ℹ Barrido: ' + nExcluidos + ' SKUs BLOQUEADOS fuera de la ' +
+               'cola. Quedan ' + skus.length + ' por barrer.');
   }
 
   const values = [headers].concat(skus.map(function(s){
