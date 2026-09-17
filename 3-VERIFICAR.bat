@@ -12,9 +12,11 @@ REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
+set "VERDE="
 set "ROJO="
 set "FIN="
 if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
@@ -96,7 +98,7 @@ if "!FALTA!"=="1" (
     echo      Revisa arriba que dice "NO". Casi todo se
     echo      arregla corriendo 1-INSTALAR-CLASP.bat
 ) else (
-    echo   Todo en orden. Puedes usar 5-SUBIR-TODO.bat
+    echo %VERDE%  Todo en orden. Puedes usar 5-SUBIR-TODO.bat%FIN%
 )
 echo.
 call :LOGO

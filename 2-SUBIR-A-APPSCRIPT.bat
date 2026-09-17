@@ -12,9 +12,11 @@ REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
+set "VERDE="
 set "ROJO="
 set "FIN="
 if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
@@ -65,8 +67,8 @@ findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_c2.txt" >nul 2>&1 && set "PUBLI
 del "%TEMP%\wm_c2.txt" >nul 2>&1
 
 if defined PUBLICAR goto SIPUBLICAR
-echo   Codigo actualizado. No hace falta publicar version:
-echo   no cambiaste nada que use el dashboard.
+echo %VERDE%  Codigo actualizado. No hace falta publicar version:%FIN%
+echo %VERDE%  no cambiaste nada que use el dashboard.%FIN%
 echo.
 call :LOGO
 exit /b 0

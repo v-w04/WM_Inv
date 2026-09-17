@@ -12,9 +12,11 @@ REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
+set "VERDE="
 set "ROJO="
 set "FIN="
 if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
@@ -144,12 +146,12 @@ echo.
 echo   Repo        github.com/v-w04/WM_Inv
 echo   Dashboard   v-w04.github.io/WM_Inv/
 echo.
-echo   GitHub Pages tarda 1-2 min en publicar.
+echo %VERDE%  GitHub Pages tarda 1-2 min en publicar.%FIN%
 echo.
 
 if defined PUBLICAR goto SIPUBLICAR
-echo   No hace falta publicar version: no cambiaste codigo
-echo   que use el dashboard.
+echo %VERDE%  No hace falta publicar version: no cambiaste codigo%FIN%
+echo %VERDE%  que use el dashboard.%FIN%
 echo.
 call :LOGO
 exit /b 0

@@ -12,9 +12,11 @@ REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
+set "VERDE="
 set "ROJO="
 set "FIN="
 if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
@@ -96,7 +98,7 @@ echo.
 if not defined ANTES   goto FINOK
 if not defined DESPUES goto FINOK
 if "!ANTES!"=="!DESPUES!" (
-    echo   Ya estabas al dia. No habia nada nuevo.
+    echo %VERDE%  Ya estabas al dia. No habia nada nuevo.%FIN%
     echo.
     goto FINOK
 )
@@ -116,7 +118,7 @@ echo   copia local.
 echo.
 
 :FINOK
-echo   Listo para trabajar.
+echo %VERDE%  Listo para trabajar.%FIN%
 echo.
 call :LOGO
 exit /b 0

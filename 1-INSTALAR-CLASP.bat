@@ -12,9 +12,11 @@ REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
+set "VERDE="
 set "ROJO="
 set "FIN="
 if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
@@ -57,7 +59,7 @@ if not exist ".clasp.json" goto SINID
 findstr /C:"PON_AQUI" .clasp.json >nul 2>&1
 if not errorlevel 1 goto SINID
 
-echo   .clasp.json    ya trae el scriptId
+echo %VERDE%  .clasp.json    ya trae el scriptId%FIN%
 goto APIAVISO
 
 :SINID
@@ -74,7 +76,7 @@ echo                     prende "Google Apps Script API"
 echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   Ya puedes usar 5-SUBIR-TODO.bat como siempre.
+echo %VERDE%  Ya puedes usar 5-SUBIR-TODO.bat como siempre.%FIN%
 echo.
 call :LOGO
 exit /b 0
