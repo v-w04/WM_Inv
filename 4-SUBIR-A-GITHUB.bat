@@ -87,8 +87,8 @@ echo   Dashboard   v-w04.github.io/WM_Inv/
 echo.
 echo   GitHub Pages tarda 1-2 min en publicar.
 echo.
-pause
 call :LOGO
+pause
 exit /b 0
 
 :FUGADETECTADA
@@ -156,9 +156,9 @@ exit /b 1
 
 :LOGO
 REM --- Logo animado ---
-REM Va DESPUES del pause a proposito: el logo hace cls, y si corriera
-REM antes borraria el reporte que la usuaria acaba de leer (incluido
-REM el aviso de publicar version). Solo en salidas exitosas.
+REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
+REM La tecla queda libre para cerrar la ventana.
+REM Solo en salidas exitosas.
 REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto :eof

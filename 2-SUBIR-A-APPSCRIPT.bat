@@ -53,8 +53,8 @@ if defined PUBLICAR goto SIPUBLICAR
 echo   Codigo actualizado. No hace falta publicar version:
 echo   no cambiaste nada que use el dashboard.
 echo.
-pause
 call :LOGO
+pause
 exit /b 0
 
 :SIPUBLICAR
@@ -72,8 +72,8 @@ echo.
 echo      Edita la que YA existe. "Nueva implementacion"
 echo      genera otra URL y deja la tuya huerfana.
 echo.
-pause
 call :LOGO
+pause
 exit /b 0
 
 :NOSEQUE
@@ -83,8 +83,8 @@ echo   No pude revisar que archivos cambiaron ^(no hay git^).
 echo   Regla: solo hay que publicar version si tocaste
 echo   WebAPI.gs, Auth.gs, Sync.gs, Api.gs o Config.gs.
 echo.
-pause
 call :LOGO
+pause
 exit /b 0
 
 :NOCONFIG
@@ -129,9 +129,9 @@ exit /b 1
 
 :LOGO
 REM --- Logo animado ---
-REM Va DESPUES del pause a proposito: el logo hace cls, y si corriera
-REM antes borraria el reporte que la usuaria acaba de leer (incluido
-REM el aviso de publicar version). Solo en salidas exitosas.
+REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
+REM La tecla queda libre para cerrar la ventana.
+REM Solo en salidas exitosas.
 REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto :eof
