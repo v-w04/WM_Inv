@@ -7,7 +7,8 @@
 //  Movimiento: giro | rebote | latido | onda
 //  Color:      arcoiris | parrot | marca
 //  Segundos:   cuanto dura antes de cerrarse solo.
-//              Si se omite, corre hasta que le des Ctrl + C.
+//              0 (o se omite) = gira hasta que se presione una tecla.
+//              Asi lo usan los .bat: el logo hace de "pause".
 //  Alto:       filas de alto del logo. Si se omite, ocupa la
 //              pantalla completa (modo pantallazo).
 //              Con un numero chico (10-14) se dibuja EN EL LUGAR,
@@ -197,6 +198,7 @@ const SEGS = Math.max(0, Number(process.argv[4]) || 0);
 // Con alto fijo el logo se dibuja en su lugar, sin borrar nada.
 const ALTO = Math.max(0, Number(process.argv[5]) || 0);
 const ENLINEA = ALTO > 0;
+const AVISO = '  Presione una tecla para continuar . . .';
 const FPS_MS = 60;
 const RAMP = ' .:-=+*#%@';
 
@@ -314,6 +316,9 @@ if (ENLINEA) {
 }
 
 function salir() {
+  // Devolver el teclado a su modo normal antes de irse, o la consola
+  // se queda sin eco y el siguiente comando se escribe a ciegas.
+  try { if (process.stdin.isTTY) process.stdin.setRawMode(false); } catch (_) {}
   // En linea: deja el ultimo cuadro puesto y baja el cursor.
   // Pantalla completa: limpia, como antes.
   process.stdout.write(ENLINEA ? '\x1b[0m\x1b[?25h\n'
@@ -322,6 +327,19 @@ function salir() {
 }
 process.on('SIGINT', salir);
 if (!ENLINEA) process.stdout.on('resize', () => process.stdout.write('\x1b[2J'));
+
+// Sin duracion fija, el logo hace de "pause": gira hasta que se
+// presione cualquier tecla. El aviso va ARRIBA del logo porque el
+// loop repinta hacia abajo desde aqui.
+const ESPERA_TECLA = SEGS === 0 && process.stdin.isTTY;
+if (ESPERA_TECLA) {
+  process.stdout.write('\n' + AVISO + '\n\n');
+  try {
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on('data', salir);   // cualquier tecla, Ctrl+C incluido
+  } catch (_) {}
+}
 
 let primerCuadro = true;
 const reloj = setInterval(() => {

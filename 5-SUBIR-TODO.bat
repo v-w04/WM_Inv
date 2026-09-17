@@ -137,7 +137,6 @@ echo   No hace falta publicar version: no cambiaste codigo
 echo   que use el dashboard.
 echo.
 call :LOGO
-pause
 exit /b 0
 
 :SIPUBLICAR
@@ -156,7 +155,6 @@ echo      Edita la que YA existe. "Nueva implementacion"
 echo      genera otra URL y deja la tuya huerfana.
 echo.
 call :LOGO
-pause
 exit /b 0
 
 :FUGADETECTADA
@@ -202,11 +200,17 @@ REM La tecla queda libre para cerrar la ventana.
 REM Solo en salidas exitosas.
 REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
-if errorlevel 1 goto :eof
-if not exist "%~dp0logo-animado.js" goto :eof
+if errorlevel 1 goto SINLOGO
+if not exist "%~dp0logo-animado.js" goto SINLOGO
 REM SIN cls: el logo se dibuja DEBAJO del reporte, no encima.
 REM Argumentos: movimiento color segundos alto-en-filas
-REM El alto chico es lo que lo mantiene en su lugar; sin el,
-REM ocupa la pantalla completa y tapa todo.
-node "%~dp0logo-animado.js" giro marca 5 12
+REM   segundos 0 = gira hasta que se presione una tecla.
+REM   El propio .js imprime el aviso y espera la tecla, por eso
+REM   aqui ya NO hay pause: haria falta presionar dos veces.
+node "%~dp0logo-animado.js" giro marca 0 12
+goto :eof
+
+:SINLOGO
+REM Sin node o sin el .js, el pause de siempre.
+pause
 goto :eof
