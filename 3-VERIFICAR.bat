@@ -3,14 +3,29 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Verificar entorno
 
+REM ---- Color de marca ----
+REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
+REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
+REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
+REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
+REM nunca se imprimen codigos sueltos en pantalla.
+set "ESC="
+for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
+set "AZUL="
+set "ROJO="
+set "FIN="
+if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
+if defined ESC set "FIN=%ESC%[0m"
+
 echo.
 echo   VERIFICAR                      estado de esta PC
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 set FALTA=0
 
-echo   [1/5]  Node.js . . . . . . . . . . . . . .
+echo   %AZUL%[1/5]%FIN%  Node.js . . . . . . . . . . . . . .
 where node >nul 2>&1
 if errorlevel 1 (
     echo          NO instalado
@@ -20,7 +35,7 @@ if errorlevel 1 (
 )
 echo.
 
-echo   [2/5]  clasp . . . . . . . . . . . . . . .
+echo   %AZUL%[2/5]%FIN%  clasp . . . . . . . . . . . . . . .
 where clasp >nul 2>&1
 if errorlevel 1 (
     echo          NO instalado
@@ -30,7 +45,7 @@ if errorlevel 1 (
 )
 echo.
 
-echo   [3/5]  Sesion de Google . . . . . . . . . .
+echo   %AZUL%[3/5]%FIN%  Sesion de Google . . . . . . . . . .
 if exist "%USERPROFILE%\.clasprc.json" (
     echo          iniciada
 ) else (
@@ -43,7 +58,7 @@ if exist "%USERPROFILE%\.clasprc.json" (
 )
 echo.
 
-echo   [4/5]  .clasp.json . . . . . . . . . . . .
+echo   %AZUL%[4/5]%FIN%  .clasp.json . . . . . . . . . . . .
 if not exist ".clasp.json" (
     echo          NO existe
     set FALTA=1
@@ -59,7 +74,7 @@ if not errorlevel 1 (
 
 :PASO5
 echo.
-echo   [5/5]  Archivos en apps-script . . . . . .
+echo   %AZUL%[5/5]%FIN%  Archivos en apps-script . . . . . .
 if not exist "apps-script" (
     echo          NO existe la carpeta
     set FALTA=1
@@ -73,10 +88,10 @@ for %%F in (apps-script\*.gs) do echo            %%~nxF
 
 :RESUMEN
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 if "!FALTA!"=="1" (
-    echo   !  FALTA ALGO
+    echo   %ROJO%!  FALTA ALGO%FIN%
     echo.
     echo      Revisa arriba que dice "NO". Casi todo se
     echo      arregla corriendo 1-INSTALAR-CLASP.bat

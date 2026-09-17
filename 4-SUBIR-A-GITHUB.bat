@@ -3,14 +3,29 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Subir a GitHub
 
+REM ---- Color de marca ----
+REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
+REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
+REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
+REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
+REM nunca se imprimen codigos sueltos en pantalla.
+set "ESC="
+for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
+set "AZUL="
+set "ROJO="
+set "FIN="
+if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
+if defined ESC set "FIN=%ESC%[0m"
+
 echo.
 echo   SUBIR A GITHUB                     solo el frontend
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 REM ================= SEGURO ANTI-CREDENCIALES =================
 REM El repo es publico y git guarda el historial para siempre.
-echo   [1/4]  Credenciales en el codigo . . . . .
+echo   %AZUL%[1/4]%FIN%  Credenciales en el codigo . . . . .
 set FUGA=0
 findstr /C:"PON_TU_CLIENT_ID_AQUI" apps-script\Auth.gs >nul 2>&1
 if errorlevel 1 set FUGA=1
@@ -36,7 +51,7 @@ if "!GIT!"=="git" goto NOGIT
 REM Candado huerfano de un git que murio a medias.
 if exist ".git\index.lock" del /f /q ".git\index.lock" >nul 2>&1
 
-echo   [2/4]  Estado del repositorio . . . . . .
+echo   %AZUL%[2/4]%FIN%  Estado del repositorio . . . . . .
 "!GIT!" status --short >nul 2>&1
 if errorlevel 1 goto NOTREPO
 
@@ -48,7 +63,7 @@ if not errorlevel 1 (
         del "%TEMP%\wm_n4.txt" >nul 2>&1
         echo          sin cambios
         echo.
-        echo   ----------------------------------------------------
+        echo   %AZUL%----------------------------------------------------%FIN%
         echo.
         echo   Todo esta al dia. Nada que subir.
         echo.
@@ -62,7 +77,7 @@ echo.
 "!GIT!" status --short
 echo.
 
-echo   [3/4]  Commit
+echo   %AZUL%[3/4]%FIN%  Commit
 echo.
 set "MSG="
 set /p "MSG=   Mensaje [Enter = automatico]: "
@@ -74,13 +89,13 @@ if errorlevel 1 goto FAIL
 if errorlevel 1 goto FAIL
 echo.
 
-echo   [4/4]  Subiendo a origin . . . . . . . . .
+echo   %AZUL%[4/4]%FIN%  Subiendo a origin . . . . . . . . .
 echo.
 "!GIT!" push origin main
 if errorlevel 1 goto PUSHFAIL
 
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 echo   Repo        github.com/v-w04/WM_Inv
 echo   Dashboard   v-w04.github.io/WM_Inv/
@@ -93,9 +108,9 @@ exit /b 0
 :FUGADETECTADA
 echo          ALERTA
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs
+echo   %ROJO%x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs%FIN%
 echo.
 echo      Un placeholder fue reemplazado. Si ahi quedo una
 echo      credencial real y la subes, queda en el historial
@@ -113,7 +128,7 @@ pause
 exit /b 1
 
 :NOGIT
-echo   x  NO ENCUENTRO GIT
+echo   %ROJO%x  NO ENCUENTRO GIT%FIN%
 echo.
 echo      Instalalo de git-scm.com/download/win
 echo      o usa GitHub Desktop.
@@ -124,7 +139,7 @@ exit /b 1
 :NOTREPO
 echo          NO es un repositorio
 echo.
-echo   x  Esta carpeta no es un repo de git.
+echo   %ROJO%x  Esta carpeta no es un repo de git.%FIN%
 echo      Abre GitHub Desktop y agregala.
 echo.
 pause
@@ -132,9 +147,9 @@ exit /b 1
 
 :PUSHFAIL
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  FALLO EL PUSH
+echo   %ROJO%x  FALLO EL PUSH%FIN%
 echo.
 echo      "Authentication failed"
 echo         abre GitHub Desktop una vez para renovar sesion
@@ -148,7 +163,7 @@ exit /b 1
 
 :FAIL
 echo.
-echo   x  Revisa el mensaje de arriba.
+echo   %ROJO%x  Revisa el mensaje de arriba.%FIN%
 echo.
 pause
 exit /b 1

@@ -3,9 +3,24 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Subir a Apps Script
 
+REM ---- Color de marca ----
+REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
+REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
+REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
+REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
+REM nunca se imprimen codigos sueltos en pantalla.
+set "ESC="
+for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
+set "AZUL="
+set "ROJO="
+set "FIN="
+if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
+if defined ESC set "FIN=%ESC%[0m"
+
 echo.
 echo   SUBIR A APPS SCRIPT                 solo el backend
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 if not exist ".clasp.json" goto NOCONFIG
@@ -19,14 +34,14 @@ echo.
 for %%F in (apps-script\*.gs) do echo     %%~nxF
 echo     appsscript.json
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 call clasp push --force
 if errorlevel 1 goto PUSHFAIL
 
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 REM No sirve un recordatorio que te obligue a investigar si aplica.
@@ -57,7 +72,7 @@ call :LOGO
 exit /b 0
 
 :SIPUBLICAR
-echo   !  FALTA PUBLICAR VERSION
+echo   %ROJO%!  FALTA PUBLICAR VERSION%FIN%
 echo.
 echo      Cambiaste codigo que SI usa el dashboard. Mientras
 echo      no publiques, la URL sirve el codigo viejo.
@@ -85,7 +100,7 @@ call :LOGO
 exit /b 0
 
 :NOCONFIG
-echo   x  NO ENCUENTRO .clasp.json
+echo   %ROJO%x  NO ENCUENTRO .clasp.json%FIN%
 echo.
 echo      Corre primero 1-INSTALAR-CLASP.bat
 echo.
@@ -93,7 +108,7 @@ pause
 exit /b 1
 
 :NOSCRIPTID
-echo   x  FALTA EL SCRIPT ID EN .clasp.json
+echo   %ROJO%x  FALTA EL SCRIPT ID EN .clasp.json%FIN%
 echo.
 echo      Abrelo con el Bloc de notas y reemplaza
 echo      PON_AQUI_TU_SCRIPT_ID con el ID de tu proyecto.
@@ -104,9 +119,9 @@ exit /b 1
 
 :PUSHFAIL
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  FALLO EL PUSH
+echo   %ROJO%x  FALLO EL PUSH%FIN%
 echo.
 echo      "User has not enabled the Apps Script API"
 echo         script.google.com/home/usersettings

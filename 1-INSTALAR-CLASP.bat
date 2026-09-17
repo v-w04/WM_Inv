@@ -3,18 +3,33 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Instalar clasp
 
+REM ---- Color de marca ----
+REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
+REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
+REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
+REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
+REM nunca se imprimen codigos sueltos en pantalla.
+set "ESC="
+for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
+set "AZUL="
+set "ROJO="
+set "FIN="
+if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
+if defined ESC set "FIN=%ESC%[0m"
+
 echo.
 echo   INSTALAR CLASP                 una sola vez por PC
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
-echo   [1/3]  Node.js . . . . . . . . . . . . . .
+echo   %AZUL%[1/3]%FIN%  Node.js . . . . . . . . . . . . . .
 where node >nul 2>&1
 if errorlevel 1 goto NONODE
 for /f "tokens=*" %%V in ('node --version') do echo          %%V
 echo.
 
-echo   [2/3]  Instalando clasp . . . . . . . . . .
+echo   %AZUL%[2/3]%FIN%  Instalando clasp . . . . . . . . . .
 echo.
 call npm install -g @google/clasp
 if errorlevel 1 goto NPMFAIL
@@ -22,7 +37,7 @@ echo.
 echo          instalado
 echo.
 
-echo   [3/3]  Autorizando tu cuenta de Google . .
+echo   %AZUL%[3/3]%FIN%  Autorizando tu cuenta de Google . .
 echo.
 echo          Se abrira tu navegador. Entra con la MISMA
 echo          cuenta donde vive el Apps Script.
@@ -31,7 +46,7 @@ pause
 call clasp login
 echo.
 
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 REM Antes aqui salia SIEMPRE "pon tu scriptId en .clasp.json",
@@ -46,7 +61,7 @@ echo   .clasp.json    ya trae el scriptId
 goto APIAVISO
 
 :SINID
-echo   !  FALTA EL SCRIPT ID
+echo   %ROJO%!  FALTA EL SCRIPT ID%FIN%
 echo.
 echo      Ponlo en .clasp.json. Sale de la URL del editor
 echo      de Apps Script, entre  /projects/  y  /edit
@@ -57,7 +72,7 @@ echo   Apps Script API   solo la primera vez en esta PC
 echo                     script.google.com/home/usersettings
 echo                     prende "Google Apps Script API"
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 echo   Ya puedes usar 5-SUBIR-TODO.bat como siempre.
 echo.
@@ -67,9 +82,9 @@ exit /b 0
 :NONODE
 echo          NO instalado
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  FALTA NODE.JS
+echo   %ROJO%x  FALTA NODE.JS%FIN%
 echo.
 echo      Bajalo de https://nodejs.org
 echo      Elige la version LTS y dale siguiente-siguiente.
@@ -80,9 +95,9 @@ exit /b 1
 
 :NPMFAIL
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  FALLO LA INSTALACION DE CLASP
+echo   %ROJO%x  FALLO LA INSTALACION DE CLASP%FIN%
 echo.
 echo      Prueba asi: click derecho en este archivo y
 echo      elige "Ejecutar como administrador".

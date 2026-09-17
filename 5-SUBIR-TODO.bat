@@ -3,16 +3,31 @@ setlocal enabledelayedexpansion
 cd /d "%~dp0"
 title Subir todo
 
+REM ---- Color de marca ----
+REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
+REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
+REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
+REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
+REM nunca se imprimen codigos sueltos en pantalla.
+set "ESC="
+for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
+set "AZUL="
+set "ROJO="
+set "FIN="
+if defined ESC set "AZUL=%ESC%[38;2;31;148;249m"
+if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
+if defined ESC set "FIN=%ESC%[0m"
+
 echo.
 echo   SUBIR TODO                    Apps Script + GitHub
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
 REM ================= SEGURO ANTI-CREDENCIALES =================
 REM El repo es publico y git guarda el historial para siempre.
 REM Si quedo una credencial real en un .gs hay que detenerlo
 REM ANTES del commit, no despues.
-echo   [1/3]  Credenciales en el codigo . . . . .
+echo   %AZUL%[1/3]%FIN%  Credenciales en el codigo . . . . .
 set FUGA=0
 findstr /C:"PON_TU_CLIENT_ID_AQUI" apps-script\Auth.gs >nul 2>&1
 if errorlevel 1 set FUGA=1
@@ -25,7 +40,7 @@ echo          limpio
 echo.
 
 REM ================= PARTE 1: APPS SCRIPT =================
-echo   [2/3]  Apps Script . . . . . . . . . . . .
+echo   %AZUL%[2/3]%FIN%  Apps Script . . . . . . . . . . . .
 echo.
 if not exist ".clasp.json" (
     echo          sin .clasp.json - saltado
@@ -40,7 +55,7 @@ goto GITPART
 
 :CLASPFAIL
 echo.
-echo   !  FALLO EL PUSH A APPS SCRIPT
+echo   %ROJO%!  FALLO EL PUSH A APPS SCRIPT%FIN%
 echo.
 echo      Si el error menciona "access_token" o "invalid_grant",
 echo      caduco tu sesion de clasp:
@@ -57,7 +72,7 @@ echo.
 
 REM ================= PARTE 2: GITHUB =================
 :GITPART
-echo   [3/3]  GitHub . . . . . . . . . . . . . .
+echo   %AZUL%[3/3]%FIN%  GitHub . . . . . . . . . . . . . .
 
 set "GIT=git"
 where git >nul 2>&1
@@ -124,7 +139,7 @@ echo          subido
 
 :FIN
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 echo   Repo        github.com/v-w04/WM_Inv
 echo   Dashboard   v-w04.github.io/WM_Inv/
@@ -140,7 +155,7 @@ call :LOGO
 exit /b 0
 
 :SIPUBLICAR
-echo   !  FALTA PUBLICAR VERSION
+echo   %ROJO%!  FALTA PUBLICAR VERSION%FIN%
 echo.
 echo      Cambiaste codigo que SI usa el dashboard. Mientras
 echo      no publiques, la URL sirve el codigo viejo.
@@ -160,9 +175,9 @@ exit /b 0
 :FUGADETECTADA
 echo          ALERTA
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs
+echo   %ROJO%x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs%FIN%
 echo.
 echo      Un placeholder fue reemplazado. Si ahi quedo una
 echo      credencial real y la subes, queda en el historial
@@ -181,9 +196,9 @@ exit /b 1
 
 :PUSHFAIL
 echo.
-echo   ----------------------------------------------------
+echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   x  FALLO EL PUSH A GITHUB
+echo   %ROJO%x  FALLO EL PUSH A GITHUB%FIN%
 echo.
 echo      "Authentication failed"
 echo         abre GitHub Desktop una vez para renovar sesion
