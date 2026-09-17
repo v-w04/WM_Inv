@@ -205,5 +205,7 @@ where node >nul 2>&1
 if errorlevel 1 goto :eof
 if not exist "%~dp0logo-animado.js" goto :eof
 cls
-node "%~dp0logo-animado.js" giro marca 18
+REM El tercer argumento son SEGUNDOS. Sin el, la animacion
+REM corre para siempre y deja la ventana colgada.
+node "%~dp0logo-animado.js" giro marca 5
 goto :eof
