@@ -129,8 +129,9 @@ REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto :eof
 if not exist "%~dp0logo-animado.js" goto :eof
-cls
-REM El tercer argumento son SEGUNDOS. Sin el, la animacion
-REM corre para siempre y deja la ventana colgada.
-node "%~dp0logo-animado.js" giro marca 5
+REM SIN cls: el logo se dibuja DEBAJO del reporte, no encima.
+REM Argumentos: movimiento color segundos alto-en-filas
+REM El alto chico es lo que lo mantiene en su lugar; sin el,
+REM ocupa la pantalla completa y tapa todo.
+node "%~dp0logo-animado.js" giro marca 5 12
 goto :eof

@@ -3,13 +3,17 @@
 //  LOGO ANIMADO - Electronics Mexico
 //  Estilo parrot.live: frames ASCII + limpiar pantalla + colores
 //
-//  Uso:   node logo-animado.js [movimiento] [color] [segundos]
+//  Uso:   node logo-animado.js [movimiento] [color] [segundos] [alto]
 //  Movimiento: giro | rebote | latido | onda
 //  Color:      arcoiris | parrot | marca
 //  Segundos:   cuanto dura antes de cerrarse solo.
 //              Si se omite, corre hasta que le des Ctrl + C.
-//              Lo usan los .bat para que la ventana no se quede colgada.
-//  Ejemplo:    node logo-animado.js giro marca 5
+//  Alto:       filas de alto del logo. Si se omite, ocupa la
+//              pantalla completa (modo pantallazo).
+//              Con un numero chico (10-14) se dibuja EN EL LUGAR,
+//              sin borrar lo que ya estaba arriba: asi los .bat
+//              conservan su reporte y el logo sale debajo.
+//  Ejemplo:    node logo-animado.js giro marca 5 12
 //  Salir:      Ctrl + C
 // ============================================================
 
@@ -189,6 +193,10 @@ const MOV = (process.argv[2] || 'giro').toLowerCase();
 const COL = (process.argv[3] || 'arcoiris').toLowerCase();
 // Tercer argumento: segundos antes de cerrarse solo. 0 = para siempre.
 const SEGS = Math.max(0, Number(process.argv[4]) || 0);
+// Cuarto argumento: alto en filas. 0 = pantalla completa.
+// Con alto fijo el logo se dibuja en su lugar, sin borrar nada.
+const ALTO = Math.max(0, Number(process.argv[5]) || 0);
+const ENLINEA = ALTO > 0;
 const FPS_MS = 60;
 const RAMP = ' .:-=+*#%@';
 
@@ -233,8 +241,13 @@ function transform(u, v, t, row, rows) {
 }
 
 function frame(t) {
-  const cols = Math.max(20, Math.min((process.stdout.columns || 80) - 1, 160));
-  const rows = Math.max(10, Math.min((process.stdout.rows || 40) - 1, 60));
+  const anchoTerm = Math.max(20, Math.min((process.stdout.columns || 80) - 1, 160));
+  // En modo en-linea el alto lo manda el argumento, no la terminal:
+  // asi el logo ocupa solo su cachito y no se come el reporte.
+  const rows = ENLINEA
+    ? ALTO
+    : Math.max(10, Math.min((process.stdout.rows || 40) - 1, 60));
+  const cols = anchoTerm;
   // la celda de terminal mide ~2:1, usamos la dimension menor
   const size = Math.min(rows, Math.floor(cols / 2));
   const w = size * 2, h = size;
@@ -246,7 +259,9 @@ function frame(t) {
     lastParrot = i; frameColor = '\x1b[' + PARROT[i] + 'm';
   }
 
-  let out = '\x1b[H';
+  // '\x1b[H' manda el cursor a la esquina de la pantalla. En modo
+  // en-linea NO se usa: el loop reposiciona con cursor-arriba.
+  let out = ENLINEA ? '' : '\x1b[H';
   for (let r = 0; r < rows; r++) {
     let line = '';
     let prev = '';
@@ -288,11 +303,39 @@ function frame(t) {
 
 // ---- loop ----
 const t0 = Date.now();
-process.stdout.write('\x1b[2J\x1b[3J\x1b[H\x1b[?25l'); // limpiar + ocultar cursor
-function salir() { process.stdout.write('\x1b[0m\x1b[?25h\x1b[2J\x1b[H'); process.exit(0); }
+
+if (ENLINEA) {
+  // Modo en-linea: NO se borra nada. El logo se dibuja debajo de lo
+  // que ya estaba y cada cuadro se pinta encima del anterior subiendo
+  // el cursor. Asi el reporte del .bat sigue visible arriba.
+  process.stdout.write('\x1b[?25l');
+} else {
+  process.stdout.write('\x1b[2J\x1b[3J\x1b[H\x1b[?25l');
+}
+
+function salir() {
+  // En linea: deja el ultimo cuadro puesto y baja el cursor.
+  // Pantalla completa: limpia, como antes.
+  process.stdout.write(ENLINEA ? '\x1b[0m\x1b[?25h\n'
+                               : '\x1b[0m\x1b[?25h\x1b[2J\x1b[H');
+  process.exit(0);
+}
 process.on('SIGINT', salir);
-process.stdout.on('resize', () => process.stdout.write('\x1b[2J'));
-const reloj = setInterval(() => process.stdout.write(frame((Date.now() - t0) / 1000)), FPS_MS);
+if (!ENLINEA) process.stdout.on('resize', () => process.stdout.write('\x1b[2J'));
+
+let primerCuadro = true;
+const reloj = setInterval(() => {
+  const cuadro = frame((Date.now() - t0) / 1000);
+  if (ENLINEA) {
+    const n = cuadro.split('\n').length;
+    // Subir n lineas para repintar encima del cuadro anterior
+    if (!primerCuadro) process.stdout.write('\x1b[' + n + 'A');
+    primerCuadro = false;
+    process.stdout.write(cuadro + '\n');
+  } else {
+    process.stdout.write(cuadro);
+  }
+}, FPS_MS);
 
 // Sin esto el proceso vive para siempre y deja la ventana del .bat
 // colgada esperando un Ctrl + C.
