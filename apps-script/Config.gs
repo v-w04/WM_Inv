@@ -139,7 +139,12 @@ const WM_CONFIG = {
 
   // ------- Presupuestos de tiempo (Apps Script mata a los 6 min = 360s) -------
   BUDGET_MAIN_MS:  240000,   // 4 min para catálogo + WFS
-  BUDGET_CHUNK_MS: 270000,   // 4.5 min para el barrido — el tope real es MAX_SKUS_POR_CHUNK
+  // 240 s, no 270: el barrido deja de pedir SKUs a los 4 min y le quedan
+  // 2 min para escribir. Con 270 la corrida mas lenta llego a 329 s y el
+  // limite duro de Apps Script son 360. En una corrida normal (~170 s) esto
+  // no cambia nada: solo frena antes las lentas. No gasta mas llamadas ni
+  // altera el dato, y la vuelta completa sigue en ~8.5 h.
+  BUDGET_CHUNK_MS: 240000,
 
   // ------- Pacing (rate limit: 300 TPM) -------
   PAGE_PACING_MS: 220,   // entre páginas de catálogo/WFS
