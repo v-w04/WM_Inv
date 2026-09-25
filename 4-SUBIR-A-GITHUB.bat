@@ -51,28 +51,35 @@ if "!GIT!"=="git" goto NOGIT
 
 :GOTGIT
 REM Candado huerfano de un git que murio a medias.
-if exist ".git\index.lock" del /f /q ".git\index.lock" >nul 2>&1
+del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
+del /f /q ".git\objects\maintenance.lock" >nul 2>&1
+del /f /q ".git\refs\heads\*.lock" >nul 2>&1
 
 echo   %AZUL%[2/4]%FIN%  Estado del repositorio . . . . . .
 "!GIT!" status --short >nul 2>&1
 if errorlevel 1 goto NOTREPO
 
 REM diff-index devuelve 0 si NO hay cambios en archivos rastreados.
+REM Arbol limpio NO quiere decir "nada que subir": puede haber
+REM commits hechos y sin push. Si el bat se va ahi, la version se
+REM queda atorada en esta compu.
+set CAMBIOS=1
 "!GIT!" diff-index --quiet HEAD -- 2>nul
 if not errorlevel 1 (
     "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_n4.txt" 2>nul
-    for %%F in ("%TEMP%\wm_n4.txt") do if %%~zF EQU 0 (
-        del "%TEMP%\wm_n4.txt" >nul 2>&1
-        echo          sin cambios
-        echo.
-        echo   %AZUL%----------------------------------------------------%FIN%
-        echo.
-        echo   Todo esta al dia. Nada que subir.
-        echo.
-        pause
-        exit /b 0
-    )
+    for %%F in ("%TEMP%\wm_n4.txt") do if %%~zF EQU 0 set CAMBIOS=0
     del "%TEMP%\wm_n4.txt" >nul 2>&1
+)
+set PENDIENTES=0
+"!GIT!" rev-list --count @{u}..HEAD > "%TEMP%\wm_p4.txt" 2>nul
+if exist "%TEMP%\wm_p4.txt" set /p PENDIENTES=<"%TEMP%\wm_p4.txt"
+del "%TEMP%\wm_p4.txt" >nul 2>&1
+if not defined PENDIENTES set PENDIENTES=0
+if "!CAMBIOS!"=="0" (
+    if "!PENDIENTES!"=="0" goto SINCAMBIOS
+    "!GIT!" push -q origin main
+    if errorlevel 1 goto PUSHFAIL
+    goto VERIFICA
 )
 echo.
 echo.
@@ -87,22 +94,39 @@ if "!MSG!"=="" set "MSG=Actualiza dashboard de inventario Walmart"
 echo.
 "!GIT!" add -A
 if errorlevel 1 goto FAIL
-"!GIT!" commit -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
+"!GIT!" commit -q -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
 if errorlevel 1 goto FAIL
 echo.
 
 echo   %AZUL%[4/4]%FIN%  Subiendo a origin . . . . . . . . .
 echo.
-"!GIT!" push origin main
+"!GIT!" push -q origin main
 if errorlevel 1 goto PUSHFAIL
+
+:VERIFICA
+REM El verde se apoya en la realidad: HEAD local contra HEAD remoto.
+set LOCAL=
+set REMOTO=
+"!GIT!" rev-parse HEAD > "%TEMP%\wm_l4.txt" 2>nul
+if exist "%TEMP%\wm_l4.txt" set /p LOCAL=<"%TEMP%\wm_l4.txt"
+del "%TEMP%\wm_l4.txt" >nul 2>&1
+"!GIT!" ls-remote origin main > "%TEMP%\wm_r4.txt" 2>nul
+if exist "%TEMP%\wm_r4.txt" set /p REMOTO=<"%TEMP%\wm_r4.txt"
+del "%TEMP%\wm_r4.txt" >nul 2>&1
+if not defined LOCAL goto NOCUADRA
+if not defined REMOTO goto NOCUADRA
+if /i not "!LOCAL:~0,10!"=="!REMOTO:~0,10!" goto NOCUADRA
+echo          subido y verificado
+goto SIGUE
+:SINCAMBIOS
+echo          sin cambios
+:SIGUE
 
 echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   Repo        github.com/v-w04/WM_Inv
-echo   Dashboard   v-w04.github.io/WM_Inv/
+echo %VERDE%  GitHub al dia.%FIN%
 echo.
-echo %VERDE%  GitHub Pages tarda 1-2 min en publicar.%FIN%
 echo.
 call :LOGO
 exit /b 0
@@ -166,6 +190,14 @@ exit /b 1
 :FAIL
 echo.
 echo   %ROJO%x  Revisa el mensaje de arriba.%FIN%
+echo.
+pause
+exit /b 1
+
+:NOCUADRA
+echo.
+echo   %ROJO%x  NO PUDE CONFIRMAR QUE SUBIO%FIN%
+echo      Revisalo en GitHub Desktop antes de seguir.
 echo.
 pause
 exit /b 1

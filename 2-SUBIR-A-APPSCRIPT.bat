@@ -74,7 +74,7 @@ call :LOGO
 exit /b 0
 
 :SIPUBLICAR
-echo   %ROJO%!  FALTA PUBLICAR VERSION%FIN%
+echo   %ROJO%^^!  FALTA PUBLICAR VERSION%FIN%
 echo.
 echo      Cambiaste codigo que SI usa el dashboard. Mientras
 echo      no publiques, la URL sirve el codigo viejo.

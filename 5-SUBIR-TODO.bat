@@ -48,16 +48,23 @@ if not exist ".clasp.json" (
     echo          sin .clasp.json - saltado
     goto GITPART
 )
-call clasp push --force
+if not exist "apps-script\appsscript.json" goto VACIA
+call clasp push --force >nul 2>"%TEMP%\wm_clasp.txt"
 if errorlevel 1 goto CLASPFAIL
 echo.
 echo          subido
 echo.
 goto GITPART
 
+:VACIA
+echo   %ROJO%x  apps-script VACIA - no se subio nada%FIN%
+echo.
+pause
+exit /b 1
+
 :CLASPFAIL
 echo.
-echo   %ROJO%!  FALLO EL PUSH A APPS SCRIPT%FIN%
+echo   %ROJO%^^!  FALLO EL PUSH A APPS SCRIPT%FIN%
 echo.
 echo      Si el error menciona "access_token" o "invalid_grant",
 echo      caduco tu sesion de clasp:
@@ -96,29 +103,31 @@ if "!GIT!"=="git" (
 
 :GOTGIT
 REM Candado huerfano de un git que murio a medias.
-if exist ".git\index.lock" del /f /q ".git\index.lock" >nul 2>&1
+del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
+del /f /q ".git\objects\maintenance.lock" >nul 2>&1
+del /f /q ".git\refs\heads\*.lock" >nul 2>&1
 
+REM Arbol limpio NO quiere decir "nada que subir": puede haber
+REM commits hechos y sin push. Si el bat se va ahi, la version se
+REM queda atorada en esta compu.
+set CAMBIOS=1
 "!GIT!" diff-index --quiet HEAD -- 2>nul
 if not errorlevel 1 (
-    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_nuevos.txt" 2>nul
-    for %%F in ("%TEMP%\wm_nuevos.txt") do if %%~zF EQU 0 (
-        del "%TEMP%\wm_nuevos.txt" >nul 2>&1
-        echo          sin cambios
-        goto FIN
-    )
-    del "%TEMP%\wm_nuevos.txt" >nul 2>&1
+    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_n5.txt" 2>nul
+    for %%F in ("%TEMP%\wm_n5.txt") do if %%~zF EQU 0 set CAMBIOS=0
+    del "%TEMP%\wm_n5.txt" >nul 2>&1
 )
-echo.
-echo.
-"!GIT!" status --short
-echo.
-
-REM Se guarda QUE cambio para decidir despues si hace falta
-REM publicar version. El dashboard corre la version PUBLICADA;
-REM los triggers y el menu corren el ultimo codigo. Solo estos
-REM archivos los ejecuta el Web App:
-REM   WebAPI.gs  Auth.gs  Sync.gs  Api.gs  Config.gs
+set PENDIENTES=0
+"!GIT!" rev-list --count @{u}..HEAD > "%TEMP%\wm_p5.txt" 2>nul
+if exist "%TEMP%\wm_p5.txt" set /p PENDIENTES=<"%TEMP%\wm_p5.txt"
+del "%TEMP%\wm_p5.txt" >nul 2>&1
+if not defined PENDIENTES set PENDIENTES=0
+REM Hace falta publicar version si cambio alguno de los archivos que
+REM ejecuta el Web App. Se revisan las DOS fuentes: lo que esta sin
+REM commitear Y lo que ya esta commiteado pero sin subir. Si solo se
+REM miraba lo primero, un commit pendiente pasaba en verde sin avisar.
 "!GIT!" status --porcelain > "%TEMP%\wm_cambios.txt" 2>nul
+"!GIT!" diff --name-only @{u}..HEAD >> "%TEMP%\wm_cambios.txt" 2>nul
 set "PUBLICAR="
 findstr /I /C:"apps-script/WebAPI.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
 findstr /I /C:"apps-script/Auth.gs"   "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
@@ -127,49 +136,62 @@ findstr /I /C:"apps-script/Api.gs"    "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "
 findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
 del "%TEMP%\wm_cambios.txt" >nul 2>&1
 
+if "!CAMBIOS!"=="0" (
+    if "!PENDIENTES!"=="0" goto SINCAMBIOS
+    "!GIT!" push -q origin main
+    if errorlevel 1 goto PUSHFAIL
+    goto VERIFICA
+)
+echo.
+"!GIT!" status --short
+echo.
+
 set "MSG="
 set /p "MSG=   Mensaje del commit [Enter = automatico]: "
 if "!MSG!"=="" set "MSG=Actualiza dashboard de inventario Walmart"
 echo.
 
 "!GIT!" add -A
-"!GIT!" commit -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
-"!GIT!" push origin main
+if errorlevel 1 goto FAILGIT
+"!GIT!" commit -q -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
+if errorlevel 1 goto FAILGIT
+"!GIT!" push -q origin main
 if errorlevel 1 goto PUSHFAIL
+
+:VERIFICA
+REM El verde se apoya en la realidad: HEAD local contra HEAD remoto.
+set LOCAL=
+set REMOTO=
+"!GIT!" rev-parse HEAD > "%TEMP%\wm_l5.txt" 2>nul
+if exist "%TEMP%\wm_l5.txt" set /p LOCAL=<"%TEMP%\wm_l5.txt"
+del "%TEMP%\wm_l5.txt" >nul 2>&1
+"!GIT!" ls-remote origin main > "%TEMP%\wm_r5.txt" 2>nul
+if exist "%TEMP%\wm_r5.txt" set /p REMOTO=<"%TEMP%\wm_r5.txt"
+del "%TEMP%\wm_r5.txt" >nul 2>&1
+if not defined LOCAL goto NOCUADRA
+if not defined REMOTO goto NOCUADRA
+if /i not "!LOCAL:~0,10!"=="!REMOTO:~0,10!" goto NOCUADRA
+echo          subido y verificado
+goto SIGUE
+:SINCAMBIOS
+echo          sin cambios
+:SIGUE
 echo.
-echo          subido
+
 
 :FIN
 echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   Repo        github.com/v-w04/WM_Inv
-echo   Dashboard   v-w04.github.io/WM_Inv/
-echo.
-echo %VERDE%  GitHub Pages tarda 1-2 min en publicar.%FIN%
-echo.
 
 if defined PUBLICAR goto SIPUBLICAR
-echo %VERDE%  No hace falta publicar version: no cambiaste codigo%FIN%
-echo %VERDE%  que use el dashboard.%FIN%
+echo %VERDE%  No hace falta publicar version.%FIN%
 echo.
 call :LOGO
 exit /b 0
 
 :SIPUBLICAR
-echo   %ROJO%!  FALTA PUBLICAR VERSION%FIN%
-echo.
-echo      Cambiaste codigo que SI usa el dashboard. Mientras
-echo      no publiques, la URL sirve el codigo viejo.
-echo.
-echo      Implementar
-echo      Administrar implementaciones
-echo      icono de lapiz
-echo      Version: Nueva version
-echo      Implementar
-echo.
-echo      Edita la que YA existe. "Nueva implementacion"
-echo      genera otra URL y deja la tuya huerfana.
+echo   %ROJO%^^!  FALTA PUBLICAR VERSION%FIN%
 echo.
 call :LOGO
 exit /b 0
@@ -206,6 +228,22 @@ echo      "Authentication failed"
 echo         abre GitHub Desktop una vez para renovar sesion
 echo      "rejected - non-fast-forward"
 echo         alguien subio cambios: corre 0-ACTUALIZAR.bat
+echo.
+pause
+exit /b 1
+
+:NOCUADRA
+echo.
+echo   %ROJO%x  NO PUDE CONFIRMAR QUE SUBIO%FIN%
+echo      Revisalo en GitHub Desktop antes de seguir.
+echo.
+pause
+exit /b 1
+
+:FAILGIT
+echo.
+echo   %ROJO%x  FALLO EL COMMIT%FIN%
+echo      Abre GitHub Desktop y revisa el repositorio.
 echo.
 pause
 exit /b 1

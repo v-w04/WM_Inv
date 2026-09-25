@@ -93,7 +93,7 @@ echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 if "!FALTA!"=="1" (
-    echo   %ROJO%!  FALTA ALGO%FIN%
+    echo   %ROJO%^^!  FALTA ALGO%FIN%
     echo.
     echo      Revisa arriba que dice "NO". Casi todo se
     echo      arregla corriendo 1-INSTALAR-CLASP.bat

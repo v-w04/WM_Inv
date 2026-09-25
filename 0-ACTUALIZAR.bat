@@ -49,9 +49,9 @@ if "!GIT!"=="git" (
 REM Candado huerfano: si un git anterior murio a medias, queda
 REM .git\index.lock y TODO git se niega a correr con
 REM "Another git process seems to be running". Se limpia solo.
-if exist ".git\index.lock" (
-    del /f /q ".git\index.lock" >nul 2>&1
-)
+del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
+del /f /q ".git\objects\maintenance.lock" >nul 2>&1
+del /f /q ".git\refs\heads\*.lock" >nul 2>&1
 
 echo   %AZUL%[1/2]%FIN%  Cambios locales sin subir . . . . .
 "!GIT!" diff-index --quiet HEAD -- 2>nul
@@ -64,7 +64,7 @@ echo          SI hay
 echo.
 "!GIT!" status --short
 echo.
-echo   %ROJO%!  TIENES CAMBIOS SIN SUBIR%FIN%
+echo   %ROJO%^^!  TIENES CAMBIOS SIN SUBIR%FIN%
 echo      Si bajas ahora, git va a intentar mezclarlos.
 echo      Para subirlos primero: cierra esto y corre
 echo      5-SUBIR-TODO.bat

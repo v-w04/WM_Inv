@@ -63,7 +63,7 @@ echo %VERDE%  .clasp.json    ya trae el scriptId%FIN%
 goto APIAVISO
 
 :SINID
-echo   %ROJO%!  FALTA EL SCRIPT ID%FIN%
+echo   %ROJO%^^!  FALTA EL SCRIPT ID%FIN%
 echo.
 echo      Ponlo en .clasp.json. Sale de la URL del editor
 echo      de Apps Script, entre  /projects/  y  /edit
