@@ -21,9 +21,18 @@ const WM_CONFIG = {
   //        · hoja "Bloqueados" (de la usuaria) + "No_Publicados"
   //          (generada)
   //        · los SKUs marcados BLOQUEADO salen del barrido
+  // 1.2 · 30/09/2026 — el barrido si guarda lo que consulta:
+  //        · escribe SOLO las filas consultadas, con la hoja reabierta
+  //          al momento de escribir y verificando el SKU de cada fila
+  //        · comprueba que la escritura quedó; si no, lo grita en la
+  //          bitácora (antes reportaba 200 SKUs y guardaba cero)
+  //        · ensureRegularSheet_ no reescribe la hoja si la lista de
+  //          SKUs no cambió (eran 96 reescrituras inútiles al día)
+  //        · la cobertura se calcula sobre filas CON SKU, no sobre el
+  //          alto de la hoja
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.1',
-  VERSION_FECHA: '2026-09-17',
+  VERSION: '1.2',
+  VERSION_FECHA: '2026-09-30',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',

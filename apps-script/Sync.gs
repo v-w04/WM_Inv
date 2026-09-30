@@ -420,6 +420,7 @@ function syncRegularChunk() {
     /* ── Procesar ────────────────────────────────────────────── */
     let hechos = 0, errores = 0, fallosSeguidos = 0;
     let throttled = false, sinPresupuesto = false;
+    const tocados = [];   // indices de `datos` que realmente cambiaron
 
     for (let k = 0; k < cola.length; k++) {
       if (Date.now() > deadline) break;
@@ -458,6 +459,7 @@ function syncRegularChunk() {
         datos[idx][1] = inv.qty;
         datos[idx][2] = inv.unit;
         datos[idx][3] = new Date();
+        tocados.push(idx);
       } else {
         errores++;
         fallosSeguidos++;
@@ -474,10 +476,71 @@ function syncRegularChunk() {
       Utilities.sleep(throttled ? WM_CONFIG.SKU_PACING_MS * 4 : WM_CONFIG.SKU_PACING_MS);
     }
 
-    /* ── Guardar de una sola escritura ───────────────────────── */
-    if (hechos > 0) {
-      sh.getRange(2, 1, total, 4).setValues(datos);
+    /* ── Guardar SOLO las filas que se tocaron ───────────────────────── */
+    /* Antes se reescribia el bloque COMPLETO (1,666 filas x 4 columnas)
+       con el objeto `sh` abierto al ARRANCAR la corrida, hasta 4 minutos
+       antes de escribir.
+
+       Medido el 30/09/2026 con dos fotos del Sheet y un barrido en medio:
+       el barrido consulto 115 SKUs, actualizarStockEnMaster_ SI dejo sus
+       fechas en Inventario -- o sea el arreglo `datos` estaba bien -- y en
+       Inv_Normal no cambio ni una celda. En 8 horas y ~2,900 llamadas solo
+       33 filas avanzaron: la escritura del bloque completo se perdia en
+       silencio.
+
+       Ahora se reabre la hoja al momento de escribir, se verifica que cada
+       fila siga teniendo el mismo SKU, y se escriben unicamente los
+       renglones consultados, en bloques contiguos, sin tocar la columna A.
+       Asi una escritura ajena cuesta un renglon, no la hoja entera; y si
+       aun asi no queda, se dice en la bitacora en vez de reportar trabajo
+       que no existe.                                                     */
+    let escritas = 0;
+    if (tocados.length) {
+      const shW  = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_REGULAR);
+      const vivo = shW.getRange(2, 1, total, 1).getValues();
+
+      tocados.sort(function(a, b){ return a - b; });
+
+      const bloques = [];
+      let ini = -1, prev = -2, movidas = 0;
+      for (let t = 0; t < tocados.length; t++) {
+        const i = tocados[t];
+        if (String(vivo[i][0] || '').trim() !== String(datos[i][0] || '').trim()) {
+          movidas++;
+          continue;   // la hoja se movio bajo los pies: esa fila no se escribe
+        }
+        if (i !== prev + 1) {
+          if (ini >= 0) bloques.push([ini, prev]);
+          ini = i;
+        }
+        prev = i;
+      }
+      if (ini >= 0) bloques.push([ini, prev]);
+      if (movidas) {
+        Logger.log('  ⚠ ' + movidas + ' filas cambiaron de SKU durante la ' +
+                   'corrida. No se escriben.');
+      }
+
+      bloques.forEach(function(b){
+        const n = b[1] - b[0] + 1;
+        shW.getRange(b[0] + 2, 2, n, 3).setValues(
+          datos.slice(b[0], b[1] + 1).map(function(r){ return [r[1], r[2], r[3]]; })
+        );
+        escritas += n;
+      });
       SpreadsheetApp.flush();
+
+      if (bloques.length) {
+        const chk = shW.getRange(bloques[0][0] + 2, 4, 1, 1).getValue();
+        if (!(chk instanceof Date) || chk.getTime() < t0) {
+          Logger.log('  ⛔ La escritura en ' + WM_CONFIG.SHEET_REGULAR +
+                     ' NO quedo (fila ' + (bloques[0][0] + 2) + ').');
+          logRun_('chunk', 0, ((Date.now() - t0) / 1000).toFixed(1),
+                  'ESCRITURA PERDIDA: ' + hechos + ' consultados, 0 guardados');
+          return { processed: 0, errores: errores, escrituraPerdida: true };
+        }
+      }
+
       // Reflejarlo en la hoja principal de inmediato, para que no quede
       // desfasada hasta el siguiente syncMain (hasta 15 min después)
       actualizarStockEnMaster_(datos);
@@ -485,25 +548,29 @@ function syncRegularChunk() {
     }
 
     /* ── Reportar cobertura, no posición ─────────────────────── */
-    let conDato = 0;
+    let conDato = 0, conSku = 0;
     for (let i = 0; i < datos.length; i++) {
+      if (!String(datos[i][0] || '').trim()) continue;   // renglon vacio: no cuenta
+      conSku++;
       if (datos[i][1] !== '' && datos[i][1] !== null) conDato++;
     }
-    const pct = total ? Math.round(conDato / total * 100) : 0;
+    const pct = conSku ? Math.round(conDato / conSku * 100) : 0;
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
 
     Logger.log('✅ Barrido: ' + hechos + ' SKUs en ' + elapsed + 's' +
                (errores ? ' · ' + errores + ' errores' : '') +
-               '  →  cobertura ' + conDato + '/' + total + ' (' + pct + '%)' +
+               '  →  ' + escritas + ' guardadas  ->  cobertura ' + conDato + '/' + conSku +
+               ' (' + pct + '%)' +
                ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
 
     logRun_('chunk', hechos, elapsed,
-            'cobertura ' + conDato + '/' + total + ' (' + pct + '%)' +
+            escritas + ' guardadas · cobertura ' + conDato + '/' + conSku +
+            ' (' + pct + '%)' +
             (sinPresupuesto ? ' · sin presupuesto' : ''));
 
     return {
-      processed: hechos, errores: errores,
-      cubiertos: conDato, total: total, pct: pct,
+      processed: hechos, errores: errores, escritas: escritas,
+      cubiertos: conDato, total: conSku, pct: pct,
       elapsedSec: elapsed,
     };
 
@@ -768,13 +835,14 @@ function ensureRegularSheet_(skus, excluidos) {
   // Conserva por SKU lo ya consultado. Si un SKU sigue existiendo,
   // su cantidad y su fecha se mantienen aunque cambie de posición.
   const previo = {};
+  const previoOrden = [];
   const lastRow = sh.getLastRow();
 
   if (lastRow > 1) {
     const old = sh.getRange(2, 1, lastRow - 1, 4).getValues();
     old.forEach(function(r){
       const s = String(r[0] || '').trim();
-      if (s) previo[s] = [r[1], r[2], r[3]];
+      if (s) { previo[s] = [r[1], r[2], r[3]]; previoOrden.push(s); }
     });
   }
 
@@ -798,6 +866,24 @@ function ensureRegularSheet_(skus, excluidos) {
                ' SKUs (+' + nExcluidos + ' excluidos a propósito) contra ' +
                previoN + ' que ya tenían dato. No se poda la hoja; se deja ' +
                'como está.');
+    return;
+  }
+
+  /* Si la lista no cambio, no se toca la hoja.
+     syncMain corre cada 15 min. Reescribir el bloque completo 96 veces al
+     dia para dejarlo identico no aporta nada, y es la otra via por la que
+     se perdia el avance del barrido: dos escrituras grandes peleando por
+     el mismo rango. La lista solo cambia cuando cambia el catalogo o la
+     hoja "Bloqueados".                                                  */
+  let igual = previoOrden.length === skus.length;
+  if (igual) {
+    for (let i = 0; i < skus.length; i++) {
+      if (previoOrden[i] !== skus[i]) { igual = false; break; }
+    }
+  }
+  if (igual) {
+    Logger.log('  = Inv_Normal: la lista no cambio (' + skus.length +
+               ' SKUs). No se reescribe.');
     return;
   }
 
