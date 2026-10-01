@@ -167,9 +167,10 @@ function syncMain() {
     if (tocaCatalogo) propsS.setProperty(WM_CONFIG.PROP_LAST_CATALOG, String(Date.now()));
     Logger.log('  Catálogo: ' + items.length + ' items desde ' + origenCat);
 
-    // Inventario propio ya consultado, para pegarlo al master.
-    // Se lee ANTES de reconstruir Inv_Normal para no perder nada.
-    const propioBySku = leerInvNormal_();
+    /* Inventario propio ya consultado. Desde 1.3 se lee de la propia hoja
+       maestra: es la unica fuente, y asi los valores dan la vuelta sin
+       perderse cuando se reescribe Inventario.                          */
+    const propioBySku = leerStockPropio_();
 
     /* ── Tu dictamen de publicación (1.1) ──────────────────────
        La hoja "Bloqueados" la llenas tú; aquí solo se lee. Si no
@@ -255,18 +256,14 @@ function syncMain() {
     writeMasterSheet_(rows);
     propsS.setProperty(WM_CONFIG.PROP_MASTER_COUNT, String(rows.length));
     propsS.setProperty(WM_CONFIG.PROP_WFS_COUNT, String(wfsList.length));
-    /* ensureRegularSheet_ conserva por SKU lo ya consultado. El barrido
-       ya no usa cursor de posición, así que crecer el catálogo o que
-       Walmart devuelva otro orden ya no borra el avance.
-
-       Los BLOQUEADOS no entran: cada uno cuesta una llamada por corrida
-       y no se pueden vender. Se le pasa cuántos se quitaron para que la
-       reja del 95% no confunda esta baja legítima con un catálogo
-       truncado.                                                        */
-    const paraBarrer = rows
-      .filter(function(r){ return !fuera[r.sku]; })
-      .map(function(r){ return r.sku; });
-    ensureRegularSheet_(paraBarrer, nFuera);
+    /* Desde 1.3 no hay hoja auxiliar: el barrido trabaja sobre esta misma
+       hoja. Los BLOQUEADOS siguen fuera de su cola -- cada uno cuesta una
+       llamada por corrida y no se pueden vender -- solo que ahora eso se
+       decide leyendo la columna miEstado, no podando otra hoja.         */
+    if (nFuera) {
+      Logger.log('  ℹ Barrido: ' + nFuera + ' SKUs BLOQUEADOS fuera de la cola. ' +
+                 'Quedan ' + (rows.length - nFuera) + ' por barrer.');
+    }
 
     /* ── Lista de trabajo de publicación ───────────────────────
        SOLO cuando se bajó el catálogo de la API.
@@ -360,11 +357,29 @@ function syncRegularChunk() {
     const t0 = Date.now();
     const deadline = t0 + WM_CONFIG.BUDGET_CHUNK_MS;
 
-    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+    /* Hoja maestra unica (1.3). Las columnas se localizan por su
+       encabezado real, nunca por letra: si se agrega una columna al final
+       o cambia el modo WFS, esto sigue apuntando al lugar correcto.     */
+    const sh = getSheet_(WM_CONFIG.SHEET_MASTER);
     const lastRow = sh.getLastRow();
     if (lastRow < 2) {
-      Logger.log('⏭ Inv_Normal vacía. Corre syncMain() primero.');
+      Logger.log('⏭ ' + WM_CONFIG.SHEET_MASTER + ' vacia. Corre syncMain() primero.');
       return { skipped: true, reason: 'sin SKUs' };
+    }
+
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const cSku  = head.indexOf('sku') + 1;
+    const cWfs  = head.indexOf('wfsDisponible') + 1;
+    const cMi   = head.indexOf('miEstado') + 1;
+    const cProp = head.indexOf('invNormal') + 1;
+    const cTot  = head.indexOf('stockTotal') + 1;
+    const cRev  = head.indexOf('invRevisado') + 1;
+    if (cSku < 1 || cWfs < 1 || cMi < 1 || cProp < 1 || cTot < 1 || cRev < 1) {
+      Logger.log('⛔ El encabezado de ' + WM_CONFIG.SHEET_MASTER + ' no trae las ' +
+                 'columnas del barrido. No se barre nada.');
+      logRun_('chunk', 0, 0, 'SALTADA: faltan columnas en ' + WM_CONFIG.SHEET_MASTER);
+      return { skipped: true, reason: 'faltan columnas' };
     }
 
     if (cuotaGoogleAgotada_()) {
@@ -389,7 +404,32 @@ function syncRegularChunk() {
        Prioridad 2: los más viejos primero
        ────────────────────────────────────────────────────────── */
     const total = lastRow - 1;
-    const datos = sh.getRange(2, 1, total, 4).getValues();
+
+    /* Se leen SOLO las 5 columnas que el barrido necesita, una por una,
+       en vez del rectangulo completo de ~26: la hoja maestra es ancha y
+       leerla entera es lo que cansaba al servicio de Hojas.             */
+    const colSku  = sh.getRange(2, cSku,  total, 1).getValues();
+    const colWfs  = sh.getRange(2, cWfs,  total, 1).getValues();
+    const colMi   = sh.getRange(2, cMi,   total, 1).getValues();
+    const colProp = sh.getRange(2, cProp, total, 1).getValues();
+    const colRev  = sh.getRange(2, cRev,  total, 1).getValues();
+
+    /* `datos` conserva la forma de siempre -- [sku, cantidad, unidad,
+       revisado] -- para que el bucle de abajo no cambie en nada.
+       invRevisado puede traer el texto "bloqueado": no es fecha.        */
+    const datos = [];
+    for (let i = 0; i < total; i++) {
+      datos.push([
+        colSku[i][0],
+        (colProp[i][0] === '' || colProp[i][0] === null) ? '' : colProp[i][0],
+        'EACH',
+        colRev[i][0] instanceof Date ? colRev[i][0] : '',
+      ]);
+    }
+
+    const esBloqueado = function(i){
+      return String(colMi[i][0] || '').trim().toUpperCase() === 'BLOQUEADO';
+    };
 
     const nuevos = [];
     const viejos = [];
@@ -397,6 +437,8 @@ function syncRegularChunk() {
     for (let i = 0; i < datos.length; i++) {
       const sku = String(datos[i][0] || '').trim();
       if (!sku) continue;
+      // Los BLOQUEADOS son decision de la duena: no se consultan nunca.
+      if (esBloqueado(i)) continue;
       const tieneDato = datos[i][1] !== '' && datos[i][1] !== null;
       if (!tieneDato) {
         nuevos.push(i);
@@ -496,8 +538,9 @@ function syncRegularChunk() {
        que no existe.                                                     */
     let escritas = 0;
     if (tocados.length) {
-      const shW  = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_REGULAR);
-      const vivo = shW.getRange(2, 1, total, 1).getValues();
+      const shW  = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+      const vivo = shW.getRange(2, cSku, total, 1).getValues();
+      const contiguas = (cTot === cProp + 1 && cRev === cProp + 2);
 
       tocados.sort(function(a, b){ return a - b; });
 
@@ -523,34 +566,56 @@ function syncRegularChunk() {
 
       bloques.forEach(function(b){
         const n = b[1] - b[0] + 1;
-        shW.getRange(b[0] + 2, 2, n, 3).setValues(
-          datos.slice(b[0], b[1] + 1).map(function(r){ return [r[1], r[2], r[3]]; })
-        );
+        const vals = [];
+        for (let k = b[0]; k <= b[1]; k++) {
+          const propio = Number(datos[k][1]);
+          const wfsQty = Number(colWfs[k][0]) || 0;
+          // stockTotal = lo que hay en WFS + lo que hay en bodega propia.
+          vals.push([propio, wfsQty + propio, datos[k][3]]);
+        }
+        if (contiguas) {
+          shW.getRange(b[0] + 2, cProp, n, 3).setValues(vals);
+        } else {
+          shW.getRange(b[0] + 2, cProp, n, 1)
+             .setValues(vals.map(function(v){ return [v[0]]; }));
+          shW.getRange(b[0] + 2, cTot,  n, 1)
+             .setValues(vals.map(function(v){ return [v[1]]; }));
+          shW.getRange(b[0] + 2, cRev,  n, 1)
+             .setValues(vals.map(function(v){ return [v[2]]; }));
+        }
         escritas += n;
       });
       SpreadsheetApp.flush();
 
+      /* Comprobar que de veras quedo. Un barrido que reporta 200 SKUs y
+         no guarda nada es peor que uno que falla: nadie se entera.
+         Esto es lo que descubrio, el 30/09/2026, que las escrituras a la
+         vieja hoja Inv_Normal se perdian en silencio.                   */
       if (bloques.length) {
-        const chk = shW.getRange(bloques[0][0] + 2, 4, 1, 1).getValue();
+        const f0  = bloques[0][0] + 2;
+        const chk = shW.getRange(f0, cRev, 1, 1).getValue();
         if (!(chk instanceof Date) || chk.getTime() < t0) {
-          Logger.log('  ⛔ La escritura en ' + WM_CONFIG.SHEET_REGULAR +
-                     ' NO quedo (fila ' + (bloques[0][0] + 2) + ').');
-          logRun_('chunk', 0, ((Date.now() - t0) / 1000).toFixed(1),
-                  'ESCRITURA PERDIDA: ' + hechos + ' consultados, 0 guardados');
-          return { processed: 0, errores: errores, escrituraPerdida: true };
+          const nota = 'ESCRITURA PERDIDA en ' + WM_CONFIG.SHEET_MASTER + ' · ' +
+                       hechos + ' consultados · ' + escritas + ' escritas · ' +
+                       bloques.length + ' bloques · ' + movidas + ' movidas · ' +
+                       'fila ' + f0 + ' col ' + cRev;
+          Logger.log('  ⛔ ' + nota);
+          logRun_('chunk', escritas, ((Date.now() - t0) / 1000).toFixed(1), nota);
+          return { processed: escritas, errores: errores, escrituraPerdida: true };
         }
       }
 
-      // Reflejarlo en la hoja principal de inmediato, para que no quede
-      // desfasada hasta el siguiente syncMain (hasta 15 min después)
-      actualizarStockEnMaster_(datos);
+      // Ya se escribio en la hoja maestra: no hay nada que reflejar aparte.
       invalidateCache_();
     }
 
     /* ── Reportar cobertura, no posición ─────────────────────── */
+    /* Cobertura sobre la COLA real: filas con SKU que no estan BLOQUEADAS.
+       Ni el alto de la hoja ni los bloqueados inflan el porcentaje.     */
     let conDato = 0, conSku = 0;
     for (let i = 0; i < datos.length; i++) {
-      if (!String(datos[i][0] || '').trim()) continue;   // renglon vacio: no cuenta
+      if (!String(datos[i][0] || '').trim()) continue;
+      if (esBloqueado(i)) continue;
       conSku++;
       if (datos[i][1] !== '' && datos[i][1] !== null) conDato++;
     }
@@ -592,23 +657,37 @@ function syncRegularChunk() {
 function getInvCursor_() { return 0; }
 
 /**
- * Borra las cantidades de Inv_Normal para forzar un barrido completo.
- * Los SKUs se conservan; solo se vacía el dato de inventario.
+ * Vacia el inventario PROPIO de la hoja maestra para forzar un barrido
+ * completo. Los SKUs y todo lo de WFS se conservan: stockTotal se deja
+ * en el stock de WFS, que es dato real y no se vuelve a consultar aqui.
  */
 function reiniciarBarrido() {
-  const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
+  const sh = getSheet_(WM_CONFIG.SHEET_MASTER);
   const lastRow = sh.getLastRow();
-  if (lastRow < 2) { Logger.log('Inv_Normal está vacía.'); return; }
+  if (lastRow < 2) { Logger.log(WM_CONFIG.SHEET_MASTER + ' esta vacia.'); return; }
 
-  const n = lastRow - 1;
-  const vacias = [];
-  for (let i = 0; i < n; i++) vacias.push(['', '', '']);
-  sh.getRange(2, 2, n, 3).setValues(vacias);
+  const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                 .map(function(h){ return String(h).trim(); });
+  const cWfs  = head.indexOf('wfsDisponible') + 1;
+  const cProp = head.indexOf('invNormal') + 1;
+  const cTot  = head.indexOf('stockTotal') + 1;
+  const cRev  = head.indexOf('invRevisado') + 1;
+  if (cWfs < 1 || cProp < 1 || cTot < 1 || cRev < 1) {
+    Logger.log('⛔ Falta alguna columna del barrido. No se toca nada.');
+    return;
+  }
+
+  const n   = lastRow - 1;
+  const wfs = sh.getRange(2, cWfs, n, 1).getValues();
+
+  sh.getRange(2, cProp, n, 1).setValues(wfs.map(function(){ return ['']; }));
+  sh.getRange(2, cTot,  n, 1).setValues(wfs.map(function(w){ return [Number(w[0]) || 0]; }));
+  sh.getRange(2, cRev,  n, 1).setValues(wfs.map(function(){ return ['']; }));
   SpreadsheetApp.flush();
   invalidateCache_();
 
   Logger.log('✅ ' + n + ' SKUs marcados como pendientes.');
-  Logger.log('   El barrido los va a consultar de nuevo.');
+  Logger.log('   El barrido los va a consultar de nuevo. WFS quedo intacto.');
 }
 
 /* ============================================================
@@ -739,26 +818,43 @@ function leerCatalogoDelMaster_() {
  * Lee la hoja Inv_Normal a un mapa por SKU.
  * Se usa para pegar el inventario propio al master.
  */
-function leerInvNormal_() {
+function leerStockPropio_() {
   const mapa = {};
   try {
-    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_REGULAR);
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
     if (!sh) return mapa;
     const last = sh.getLastRow();
     if (last < 2) return mapa;
 
-    const vals = sh.getRange(2, 1, last - 1, 4).getValues();
-    vals.forEach(function(r){
-      const sku = String(r[0] || '').trim();
-      if (!sku) return;
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const cSku  = head.indexOf('sku') + 1;
+    const cProp = head.indexOf('invNormal') + 1;
+    const cRev  = head.indexOf('invRevisado') + 1;
+    if (cSku < 1 || cProp < 1 || cRev < 1) {
+      Logger.log('  ⚠ "' + WM_CONFIG.SHEET_MASTER + '" no trae sku/invNormal/' +
+                 'invRevisado. No se puede leer el stock propio.');
+      return mapa;
+    }
+
+    const n    = last - 1;
+    const skus = sh.getRange(2, cSku,  n, 1).getValues();
+    const prop = sh.getRange(2, cProp, n, 1).getValues();
+    const rev  = sh.getRange(2, cRev,  n, 1).getValues();
+
+    for (let i = 0; i < n; i++) {
+      const sku = String(skus[i][0] || '').trim();
+      if (!sku) continue;
       mapa[sku] = {
-        cantidad: (r[1] === '' || r[1] === null) ? '' : Number(r[1]),
-        unidad:   r[2] || '',
-        revisado: r[3] instanceof Date ? r[3] : '',
+        cantidad: (prop[i][0] === '' || prop[i][0] === null) ? '' : Number(prop[i][0]),
+        unidad:   'EACH',
+        // Puede traer el texto "bloqueado": eso NO es fecha, cuenta como sin dato.
+        revisado: rev[i][0] instanceof Date ? rev[i][0] : '',
       };
-    });
+    }
   } catch (e) {
-    Logger.log('  ⚠ No se pudo leer Inv_Normal: ' + e.message);
+    Logger.log('  ⚠ No se pudo leer el stock propio de ' +
+               WM_CONFIG.SHEET_MASTER + ': ' + e.message);
   }
   return mapa;
 }
@@ -827,6 +923,10 @@ function writeMasterSheet_(rows) {
  * Conserva las cantidades ya obtenidas.
  * @return {boolean} true si la lista de SKUs cambió (hay que reiniciar el cursor)
  */
+/* ⚠ SIN USO desde 1.3 (30/09/2026). Generaba la hoja "Inv_Normal",
+   que ya no existe en el flujo: sus escrituras se perdian en silencio y
+   el barrido se mudo a la hoja maestra. Se deja por historia; NO volver
+   a llamarla sin leer antes la seccion 1.3 de wm-inv-arquitectura.md. */
 function ensureRegularSheet_(skus, excluidos) {
   const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
   const headers = ['sku', 'cantidad', 'unidad', 'revisadoEn'];
@@ -926,6 +1026,8 @@ function ensureRegularSheet_(skus, excluidos) {
  *
  * @param {Array} datosRegular filas [sku, cantidad, unidad, revisadoEn]
  */
+/* ⚠ SIN USO desde 1.3: el barrido ya escribe directo en la hoja
+   maestra, asi que no hay nada que reflejar de una hoja a otra.      */
 function actualizarStockEnMaster_(datosRegular) {
   try {
     const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
@@ -1016,32 +1118,15 @@ function loadRows_() {
   const master = readSheetAsObjects_(WM_CONFIG.SHEET_MASTER);
   if (!master.length) return { rows: [], ts: 0, progress: null };
 
-  // Merge con inventario normal
-  const regular = {};
-  try {
-    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
-    const lastRow = sh.getLastRow();
-    if (lastRow > 1) {
-      const vals = sh.getRange(2, 1, lastRow - 1, 4).getValues();
-      vals.forEach(function(r){
-        const s = String(r[0] || '').trim();
-        if (s) regular[s] = {
-          invNormal:  r[1] === '' ? '' : Number(r[1]),
-          invUnidad:  r[2] || '',
-          invRevisado: r[3] instanceof Date ? r[3].toISOString() : (r[3] || ''),
-        };
-      });
-    }
-  } catch (e) {
-    Logger.log('⚠ No se pudo leer Inv_Normal: ' + e.message);
-  }
-
+  /* Desde 1.3 no hay merge: la hoja maestra ya trae invNormal,
+     stockTotal e invRevisado escritos por el barrido. Solo se
+     normaliza la fecha a texto para el JSON del dashboard.           */
   const rows = master.map(function(m){
-    const r = regular[m.sku] || {};
     return Object.assign({}, m, {
-      invNormal:   r.invNormal !== undefined ? r.invNormal : '',
-      invUnidad:   r.invUnidad || '',
-      invRevisado: r.invRevisado || '',
+      invUnidad:   'EACH',
+      invRevisado: m.invRevisado instanceof Date
+                     ? m.invRevisado.toISOString()
+                     : (m.invRevisado || ''),
     });
   });
 
@@ -1207,24 +1292,69 @@ function testSheetAccess() {
   }
 }
 
-/** Muestra en qué va el barrido de inventario normal */
+/**
+ * Estado del barrido, leido de la hoja maestra (1.3).
+ *
+ * Una sola funcion para los cinco lugares que lo reportan (menu, web app,
+ * diagnostico, verProgreso): antes cada uno lo recalculaba a su manera
+ * sobre Inv_Normal y podian no coincidir.
+ *
+ * `total` es la COLA real: filas con SKU que NO estan BLOQUEADAS.
+ */
+function progresoBarrido_() {
+  const out = { total: 0, conDato: 0, faltan: 0, pct: 0,
+                masViejo: null, masReciente: null, sinDato: [] };
+  try {
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+    if (!sh) return out;
+    const last = sh.getLastRow();
+    if (last < 2) return out;
+
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const cSku  = head.indexOf('sku') + 1;
+    const cMi   = head.indexOf('miEstado') + 1;
+    const cProp = head.indexOf('invNormal') + 1;
+    const cRev  = head.indexOf('invRevisado') + 1;
+    if (cSku < 1 || cMi < 1 || cProp < 1 || cRev < 1) return out;
+
+    const n    = last - 1;
+    const skus = sh.getRange(2, cSku,  n, 1).getValues();
+    const mi   = sh.getRange(2, cMi,   n, 1).getValues();
+    const prop = sh.getRange(2, cProp, n, 1).getValues();
+    const rev  = sh.getRange(2, cRev,  n, 1).getValues();
+
+    for (let i = 0; i < n; i++) {
+      const sku = String(skus[i][0] || '').trim();
+      if (!sku) continue;
+      if (String(mi[i][0] || '').trim().toUpperCase() === 'BLOQUEADO') continue;
+      out.total++;
+      if (prop[i][0] !== '' && prop[i][0] !== null) {
+        out.conDato++;
+        const d = rev[i][0];
+        if (d instanceof Date) {
+          if (!out.masViejo    || d < out.masViejo)    out.masViejo    = d;
+          if (!out.masReciente || d > out.masReciente) out.masReciente = d;
+        }
+      } else if (out.sinDato.length < 500) {
+        out.sinDato.push(sku);
+      }
+    }
+    out.faltan = Math.max(0, out.total - out.conDato);
+    out.pct    = out.total ? Math.round(out.conDato / out.total * 100) : 0;
+  } catch (e) {
+    Logger.log('  ⚠ progresoBarrido_: ' + e.message);
+  }
+  return out;
+}
+
+/** Muestra en qué va el barrido de inventario propio */
 function verProgreso() {
   try {
-    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
-    const total = Math.max(0, sh.getLastRow() - 1);
-
-    let conDato = 0, masViejo = null;
-    if (total > 0) {
-      const vals = sh.getRange(2, 2, total, 3).getValues();
-      vals.forEach(function(r){
-        if (r[0] !== '' && r[0] !== null) {
-          conDato++;
-          if (r[2] instanceof Date && (!masViejo || r[2] < masViejo)) masViejo = r[2];
-        }
-      });
-    }
-    const pct = total ? Math.round(conDato / total * 100) : 0;
-    const faltan = total - conDato;
+    const pr = progresoBarrido_();
+    const total = pr.total, conDato = pr.conDato, masViejo = pr.masViejo;
+    const pct = pr.pct;
+    const faltan = pr.faltan;
     const corridas = Math.ceil(faltan / WM_CONFIG.MAX_SKUS_POR_CHUNK);
 
     Logger.log('── PROGRESO DEL BARRIDO ──');

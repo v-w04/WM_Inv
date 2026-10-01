@@ -303,19 +303,11 @@ function porQueNoCorre() {
   /* 2b · ¿El barrido está avanzando de verdad? */
   p('── 2b. ¿El barrido avanza? ──');
   try {
-    const shR = getSheet_(WM_CONFIG.SHEET_REGULAR);
-    const totR = Math.max(0, shR.getLastRow() - 1);
-    let conDato = 0, masReciente = null;
-    if (totR > 0) {
-      const v = shR.getRange(2, 2, totR, 3).getValues();
-      v.forEach(function(r){
-        if (r[0] !== '' && r[0] !== null) {
-          conDato++;
-          if (r[2] instanceof Date && (!masReciente || r[2] > masReciente)) masReciente = r[2];
-        }
-      });
-    }
-    const pctc = totR ? Math.round(conDato / totR * 100) : 0;
+    const prB = progresoBarrido_();
+    const totR = prB.total;
+    const conDato = prB.conDato;
+    const masReciente = prB.masReciente;
+    const pctc = prB.pct;
     p('   Cobertura: ' + conDato + ' de ' + totR + '  (' + pctc + '%)');
     if (masReciente) {
       const minsUlt = Math.round((Date.now() - masReciente.getTime()) / 60000);
@@ -398,7 +390,8 @@ function porQueNoCorre() {
     const inv = ss.getSheetByName(WM_CONFIG.SHEET_MASTER);
     const reg = ss.getSheetByName(WM_CONFIG.SHEET_REGULAR);
     p('   Inventario:  ' + (inv ? Math.max(0, inv.getLastRow() - 1) + ' filas' : 'no existe'));
-    p('   Inv_Normal:  ' + (reg ? Math.max(0, reg.getLastRow() - 1) + ' filas' : 'no existe'));
+    p('   Inv_Normal:  ' + (reg ? Math.max(0, reg.getLastRow() - 1) +
+        ' filas (ya no se usa desde 1.3, se puede borrar)' : 'no existe — correcto'));
   } catch (e) {
     p('   ❌ ' + e.message);
   }
@@ -448,16 +441,10 @@ function verSkusSinDato() {
   p('══════════════════════════════════════════════════');
   p('');
 
-  const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
-  const total = Math.max(0, sh.getLastRow() - 1);
-  if (!total) { p('Inv_Normal está vacía.'); return L.join('\n'); }
-
-  const datos = sh.getRange(2, 1, total, 4).getValues();
-  const sinDato = [];
-  datos.forEach(function(r){
-    const sku = String(r[0] || '').trim();
-    if (sku && (r[1] === '' || r[1] === null)) sinDato.push(sku);
-  });
+  const prS = progresoBarrido_();
+  const total = prS.total;
+  if (!total) { p(WM_CONFIG.SHEET_MASTER + ' esta vacia.'); return L.join('\n'); }
+  const sinDato = prS.sinDato;
 
   p('   Sin dato: ' + sinDato.length + ' de ' + total +
     '  (' + (sinDato.length / total * 100).toFixed(1) + '%)');

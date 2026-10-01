@@ -146,15 +146,9 @@ function inventoryAction_(force) {
 function progressAction_() {
   let total = 0, cubiertos = 0;
   try {
-    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
-    total = Math.max(0, sh.getLastRow() - 1);
-    if (total > 0) {
-      // Columna B = cantidad. Si tiene valor, ese SKU ya fue consultado.
-      const vals = sh.getRange(2, 2, total, 1).getValues();
-      for (let i = 0; i < vals.length; i++) {
-        if (vals[i][0] !== '' && vals[i][0] !== null) cubiertos++;
-      }
-    }
+    const pr = progresoBarrido_();
+    total = pr.total;
+    cubiertos = pr.conDato;
   } catch (e) {}
 
   return json_({

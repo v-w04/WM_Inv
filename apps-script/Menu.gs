@@ -163,21 +163,10 @@ function mnu_chunk() {
 
 function mnu_progreso() {
   try {
-    const sh = getSheet_(WM_CONFIG.SHEET_REGULAR);
-    const total = Math.max(0, sh.getLastRow() - 1);
-
-    let conDato = 0, masViejo = null;
-    if (total > 0) {
-      const vals = sh.getRange(2, 2, total, 3).getValues();
-      vals.forEach(function(r){
-        if (r[0] !== '' && r[0] !== null) {
-          conDato++;
-          if (r[2] instanceof Date && (!masViejo || r[2] < masViejo)) masViejo = r[2];
-        }
-      });
-    }
-    const pctCob = total ? Math.round(conDato / total * 100) : 0;
-    const faltan = Math.max(0, total - conDato);
+    const pr = progresoBarrido_();
+    const total = pr.total, conDato = pr.conDato, masViejo = pr.masViejo;
+    const pctCob = pr.pct;
+    const faltan = pr.faltan;
     const lotes = Math.ceil(faltan / WM_CONFIG.MAX_SKUS_POR_CHUNK);
     const horas = (lotes * WM_CONFIG.CHUNK_INTERVAL_MIN / 60).toFixed(1);
 

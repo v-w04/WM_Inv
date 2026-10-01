@@ -30,9 +30,19 @@ const WM_CONFIG = {
   //          SKUs no cambió (eran 96 reescrituras inútiles al día)
   //        · la cobertura se calcula sobre filas CON SKU, no sobre el
   //          alto de la hoja
+  // 1.3 · 01/10/2026 — UNA SOLA HOJA MAESTRA: "Inventario".
+  //        Se comprobo que las escrituras a "Inv_Normal" se perdian en
+  //        silencio (barrido reportando 200 SKUs y guardando cero, con
+  //        fechas clavadas 5 dias). Las escrituras a "Inventario" si
+  //        quedan, asi que el barrido se mudo ahi:
+  //        · arma su cola leyendo Inventario (sku, miEstado, invNormal,
+  //          invRevisado) y escribe en Inventario (invNormal, stockTotal,
+  //          invRevisado). WFS entra igual que siempre, completo.
+  //        · "Inv_Normal" ya no se genera ni se lee
+  //        · progresoBarrido_() es la unica fuente del avance
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.2',
-  VERSION_FECHA: '2026-09-30',
+  VERSION: '1.3',
+  VERSION_FECHA: '2026-10-01',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',
@@ -55,7 +65,10 @@ const WM_CONFIG = {
   ZONA: 'America/Mexico_City',
 
   SHEET_MASTER:  'Inventario',      // catálogo + WFS (se reescribe completo)
-  SHEET_REGULAR: 'Inv_Normal',      // inventario no-WFS (se llena por partes)
+  /* LEGADO. Hasta 1.2 el barrido vivia aqui. Desde 1.3 no se genera ni se
+     lee: sus escrituras se perdian en silencio. La constante se queda solo
+     para que el diagnostico pueda avisar si la hoja vieja sigue ahi.      */
+  SHEET_REGULAR: 'Inv_Normal',
   SHEET_LOG:     'Sync_Log',
 
   // Triaje de publicación. Dos dueños distintos, a propósito:
