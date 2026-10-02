@@ -40,9 +40,18 @@ const WM_CONFIG = {
   //          invRevisado). WFS entra igual que siempre, completo.
   //        · "Inv_Normal" ya no se genera ni se lee
   //        · progresoBarrido_() es la unica fuente del avance
+  // 1.4 · 02/10/2026 — nada depende de la POSICION de una columna:
+  //        · "Bloqueados" se lee por encabezado (era A..F por posicion;
+  //          insertar una columna ahi apagaba todos los bloqueos sin
+  //          dar un solo error)
+  //        · el formato de texto y el desplegable de "Bloqueados" se
+  //          colocan por encabezado
+  //        · al reescribir "Inventario" y "No_Publicados" ya NO se
+  //          borran las columnas extra del final cuyo encabezado no es
+  //          del script: esas son de la duena
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.3',
-  VERSION_FECHA: '2026-10-01',
+  VERSION: '1.4',
+  VERSION_FECHA: '2026-10-02',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',

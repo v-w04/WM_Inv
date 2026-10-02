@@ -764,6 +764,9 @@ const CAMPOS_CATALOGO = [
 /** Columnas que Sheets debe tratar como TEXTO (si no, se come los ceros iniciales) */
 const COLS_TEXTO = ['upc', 'gtin', 'sku'];
 
+/** Columnas de la bitacora. Se usan por NOMBRE, igual que las demas. */
+const LOG_COLS = ['Timestamp', 'Proceso', 'Filas', 'Segundos', 'Nota'];
+
 /**
  * Relee el catálogo desde la hoja "Inventario" en vez de la API.
  *
@@ -906,9 +909,32 @@ function writeMasterSheet_(rows) {
                 Math.max(colsAntes, MASTER_COLS.length)).clearContent();
   }
   if (colsAntes > MASTER_COLS.length) {
-    sh.getRange(1, MASTER_COLS.length + 1,
-                Math.max(filasAntes, values.length),
-                colsAntes - MASTER_COLS.length).clearContent();
+    /* Solo se limpian las columnas sobrantes que son NUESTRAS: las que
+       quedaron de un cambio de modo WFS (41 columnas -> 26), o las que
+       no tienen encabezado. Una columna con un encabezado que no
+       conocemos es de la duena y NO se toca.
+
+       Antes se limpiaba todo lo que hubiera a la derecha, y eso borraba
+       cualquier columna que ella agregara al final de la hoja -- que es
+       justo donde la regla del proyecto le dice que las agregue.      */
+    const nSobra  = colsAntes - MASTER_COLS.length;
+    const cabSobra = sh.getRange(1, MASTER_COLS.length + 1, 1, nSobra)
+                       .getValues()[0].map(function(h){ return String(h).trim(); });
+    const nuestras = {};
+    MASTER_COLS_BASE.concat(MASTER_COLS_WFS_PRO)
+      .forEach(function(c){ nuestras[c] = true; });
+
+    let ajenas = 0;
+    const altoLimpiar = Math.max(filasAntes, values.length);
+    for (let k = 0; k < nSobra; k++) {
+      const h = cabSobra[k];
+      if (h && !nuestras[h]) { ajenas++; continue; }   // columna de la duena
+      sh.getRange(1, MASTER_COLS.length + 1 + k, altoLimpiar, 1).clearContent();
+    }
+    if (ajenas) {
+      Logger.log('  ℹ ' + ajenas + ' columna(s) extra al final de ' +
+                 WM_CONFIG.SHEET_MASTER + ' no son del script: se dejan intactas.');
+    }
   }
 
   SpreadsheetApp.flush();
@@ -1231,9 +1257,28 @@ function logRun_(tipo, count, elapsed, nota) {
   try {
     const sh = getSheet_(WM_CONFIG.SHEET_LOG);
     if (sh.getLastRow() === 0) {
-      sh.appendRow(['Timestamp', 'Proceso', 'Filas', 'Segundos', 'Nota']);
+      sh.appendRow(LOG_COLS.slice());
     }
-    sh.appendRow([new Date(), tipo, count, elapsed, nota || '']);
+
+    /* La fila se arma segun el encabezado REAL, no en orden fijo: si un
+       dia alguien reordena o inserta una columna en la bitacora, cada
+       valor sigue cayendo en su columna en vez de correrse todo.      */
+    const ancho = Math.max(sh.getLastColumn(), LOG_COLS.length);
+    const head  = sh.getRange(1, 1, 1, ancho).getValues()[0]
+                    .map(function(h){ return String(h).trim(); });
+    const dato = {
+      'Timestamp': new Date(), 'Proceso': tipo, 'Filas': count,
+      'Segundos': elapsed, 'Nota': nota || '',
+    };
+    const fila = [];
+    for (let i = 0; i < ancho; i++) {
+      fila.push(dato[head[i]] !== undefined ? dato[head[i]] : '');
+    }
+    // Si el encabezado no trae nada reconocible, se escribe en el orden
+    // historico antes que perder el registro.
+    const reconocidas = head.filter(function(h){ return dato[h] !== undefined; }).length;
+    sh.appendRow(reconocidas ? fila
+                             : [new Date(), tipo, count, elapsed, nota || '']);
     podarLog_(sh);
   } catch (e) {}
 }
@@ -1255,7 +1300,12 @@ function podarLog_(sh) {
 
   const n = last - 1;                       // sin el encabezado
   const corte = Date.now() - WM_CONFIG.LOG_DIAS * 86400000;
-  const fechas = sh.getRange(2, 1, n, 1).getValues();
+
+  // La columna de la fecha se busca por encabezado, no se asume la A.
+  const head = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), LOG_COLS.length))
+                 .getValues()[0].map(function(h){ return String(h).trim(); });
+  const cTs = head.indexOf('Timestamp') + 1 || 1;
+  const fechas = sh.getRange(2, cTs, n, 1).getValues();
 
   // La bitácora se escribe con appendRow, así que está en orden.
   // Se cuenta la racha inicial de filas viejas y se corta ahí.

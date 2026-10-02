@@ -193,14 +193,46 @@ function leerBloqueados_() {
     const last = sh.getLastRow();
     if (last < 2) { out.ok = true; return out; }   // solo encabezados
 
-    const vals = sh.getRange(2, 1, last - 1, BLOQ_COLS.length).getValues();
+    /* ── Se lee por ENCABEZADO, no por posicion ─────────────
+       Esta hoja la llena la duena a mano, asi que es la que mas
+       probabilidades tiene de que un dia se le mueva o se le inserte una
+       columna. Leida por posicion, insertar una columna antes de "estado"
+       hacia que TODOS los SKUs salieran con estado invalido: nadie
+       quedaba excluido, la cola brincaba de 1,678 a 3,289 y los bloqueos
+       dejaban de aplicarse sin un solo error.
+
+       Si la fila de encabezados no esta (alguien la borro), se cae al
+       orden historico A..F y se avisa en la bitacora.                 */
+    const ancho = Math.max(sh.getLastColumn(), BLOQ_COLS.length);
+    const head  = sh.getRange(1, 1, 1, ancho).getValues()[0]
+                    .map(function(h){ return String(h).trim(); });
+    const idx = {};
+    head.forEach(function(h, i){ if (h && idx[h] === undefined) idx[h] = i; });
+
+    const porNombre = (idx['sku'] !== undefined && idx['estado'] !== undefined);
+    if (!porNombre) {
+      out.sinEncabezados = true;
+      Logger.log('  ⚠ "' + WM_CONFIG.SHEET_BLOQUEADOS + '" no trae los ' +
+                 'encabezados "sku" y "estado". Se leen las columnas por ' +
+                 'posicion (A..F) como antes.');
+    }
+    const col = function(nombre, porDefecto){
+      return (porNombre && idx[nombre] !== undefined) ? idx[nombre] : porDefecto;
+    };
+    const cSku  = col('sku', 0);
+    const cEst  = col('estado', 1);
+    const cMot  = col('motivo', 2);
+    const cNue  = col('skuNuevo', 3);
+    const cNota = col('nota', 5);
+
+    const vals = sh.getRange(2, 1, last - 1, ancho).getValues();
 
     vals.forEach(function(r){
-      const sku = String(r[0] || '').trim();
+      const sku = String(r[cSku] || '').trim();
       if (!sku) return;
 
       // Se tolera que escriba "mal publicado", "Mal Publicado", etc.
-      const estado = String(r[1] || '').trim().toUpperCase().replace(/\s+/g, '_');
+      const estado = String(r[cEst] || '').trim().toUpperCase().replace(/\s+/g, '_');
 
       if (PUB_ESTADOS.indexOf(estado) < 0) {
         // Una fila con SKU pero sin estado válido no se adivina: se
@@ -212,9 +244,9 @@ function leerBloqueados_() {
 
       out.mapa[sku] = {
         estado:   estado,
-        motivo:   String(r[2] || '').trim(),
-        skuNuevo: String(r[3] || '').trim(),
-        nota:     String(r[5] || '').trim(),
+        motivo:   String(r[cMot]  || '').trim(),
+        skuNuevo: String(r[cNue]  || '').trim(),
+        nota:     String(r[cNota] || '').trim(),
       };
       if (estado === 'BLOQUEADO') out.nBloqueados++;
     });
@@ -307,8 +339,20 @@ function crearHojaBloqueados_() {
      agote, y era parte de por qué esto tronaba.                        */
   const filas = BLOQ_FILAS_VALIDADAS;
 
-  if (sh.getRange(2, 1).getNumberFormat() !== '@') {
-    sh.getRange(1, 1, filas + 1, 1).setNumberFormat('@');
+  /* Que columna es cual se decide por el encabezado, no por la letra:
+     si la duena reordena su hoja, el formato de texto y el desplegable
+     siguen cayendo donde deben.                                       */
+  const cabActual = sh.getRange(1, 1, 1, Math.max(sh.getLastColumn(), BLOQ_COLS.length))
+                      .getValues()[0].map(function(h){ return String(h).trim(); });
+  const colDe = function(nombre, porDefecto){
+    const i = cabActual.indexOf(nombre);
+    return (i >= 0 ? i : porDefecto) + 1;
+  };
+  const colSkuNum = colDe('sku', 0);
+  const colEstNum = colDe('estado', 1);
+
+  if (sh.getRange(2, colSkuNum).getNumberFormat() !== '@') {
+    sh.getRange(1, colSkuNum, filas + 1, 1).setNumberFormat('@');
   }
 
   /* Desplegable en la columna estado, solo si no está ya.
@@ -318,7 +362,7 @@ function crearHojaBloqueados_() {
      las de abajo no traen desplegable y funcionan igual — leerBloqueados_
      lee el texto, no la validación. Lo único que importa es que el estado
      diga BLOQUEADO, MAL_PUBLICADO o REPUBLICADO.                        */
-  if (!sh.getRange(2, 2).getDataValidation()) {
+  if (!sh.getRange(2, colEstNum).getDataValidation()) {
     const regla = SpreadsheetApp.newDataValidation()
       .requireValueInList(PUB_ESTADOS, true)
       .setAllowInvalid(true)
@@ -326,7 +370,7 @@ function crearHojaBloqueados_() {
                    'MAL_PUBLICADO = hay algo que hacer. ' +
                    'REPUBLICADO = ya lo intenté.')
       .build();
-    sh.getRange(2, 2, filas, 1).setDataValidation(regla);
+    sh.getRange(2, colEstNum, filas, 1).setDataValidation(regla);
   }
 
   return !yaExistia;
@@ -436,8 +480,19 @@ function escribirNoPublicados_(rows, bloq) {
                 Math.max(colsAntes, NOPUB_COLS.length)).clearContent();
   }
   if (colsAntes > NOPUB_COLS.length) {
-    sh.getRange(1, NOPUB_COLS.length + 1, Math.max(filasAntes, values.length),
-                colsAntes - NOPUB_COLS.length).clearContent();
+    // Igual que en writeMasterSheet_: una columna extra con encabezado
+    // que no es nuestro es de la duena y no se toca.
+    const nSobra = colsAntes - NOPUB_COLS.length;
+    const cabSobra = sh.getRange(1, NOPUB_COLS.length + 1, 1, nSobra)
+                       .getValues()[0].map(function(h){ return String(h).trim(); });
+    const nuestras = {};
+    NOPUB_COLS.forEach(function(c){ nuestras[c] = true; });
+    const altoLimpiar = Math.max(filasAntes, values.length);
+    for (let k = 0; k < nSobra; k++) {
+      const h = cabSobra[k];
+      if (h && !nuestras[h]) continue;
+      sh.getRange(1, NOPUB_COLS.length + 1 + k, altoLimpiar, 1).clearContent();
+    }
   }
 
   conteo.total = lista.length;
