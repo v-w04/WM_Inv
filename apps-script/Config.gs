@@ -49,9 +49,15 @@ const WM_CONFIG = {
   //        · al reescribir "Inventario" y "No_Publicados" ya NO se
   //          borran las columnas extra del final cuyo encabezado no es
   //          del script: esas son de la duena
+  // 1.5 · 05/10/2026 — registro de llegadas a WFS:
+  //        · hoja nueva "WFS_Llegadas": cada vez que el disponible de un SKU
+  //          SUBE entre dos corridas de syncMain se anota (fecha, SKU, antes,
+  //          despues, cuanto subio). Las ventas solo bajan el stock, asi que
+  //          una subida es mercancia que llego (o una devolucion)
+  //        · no hace llamadas nuevas a Walmart ni cambia nada de lo anterior
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.4',
-  VERSION_FECHA: '2026-10-02',
+  VERSION: '1.5',
+  VERSION_FECHA: '2026-10-05',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',
@@ -85,6 +91,10 @@ const WM_CONFIG = {
   //   NOPUB       la genera el script. Se sobreescribe cada corrida.
   SHEET_BLOQUEADOS: 'Bloqueados',
   SHEET_NOPUB:      'No_Publicados',
+
+  // Registro de subidas del stock en WFS (lo llena el script; se poda solo).
+  SHEET_LLEGADAS:      'WFS_Llegadas',
+  LLEGADAS_MAX_FILAS:  3000,
 
   // ------- Bitácora -------
   // Crece ~144 filas al día (96 syncMain + 48 chunk).

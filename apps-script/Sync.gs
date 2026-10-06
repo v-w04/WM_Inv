@@ -253,9 +253,29 @@ function syncMain() {
       return { skipped: true, reason: 'sin tiempo para escribir' };
     }
 
+    /* El WFS de la corrida anterior se lee ANTES de reescribir la hoja:
+       despues ya no existe. Solo es una lectura, no cuesta llamadas.   */
+    const wfsPrevio = leerWfsPrevio_();
+
     writeMasterSheet_(rows);
     propsS.setProperty(WM_CONFIG.PROP_MASTER_COUNT, String(rows.length));
     propsS.setProperty(WM_CONFIG.PROP_WFS_COUNT, String(wfsList.length));
+
+    /* Registro de llegadas (1.5). Va DESPUES de escribir bien la hoja: si la
+       escritura falla, la base sigue siendo la vieja y la subida se vuelve a
+       detectar en la siguiente corrida sin duplicarse. En try aparte: es un
+       registro, no el trabajo principal.                                   */
+    let notaLlegadas = '';
+    try {
+      const lleg = registrarLlegadasWfs_(wfsPrevio, rows);
+      if (lleg.skus) {
+        notaLlegadas = ' · subida WFS: ' + lleg.skus + ' SKUs (+' + lleg.unidades + ')';
+        Logger.log('  📦 Subio el stock WFS de ' + lleg.skus + ' SKUs (+' +
+                   lleg.unidades + ' uds). Anotado en "' + WM_CONFIG.SHEET_LLEGADAS + '".');
+      }
+    } catch (eLleg) {
+      Logger.log('  ⚠ No pude anotar las llegadas WFS: ' + eLleg.message);
+    }
     /* Desde 1.3 no hay hoja auxiliar: el barrido trabaja sobre esta misma
        hoja. Los BLOQUEADOS siguen fuera de su cola -- cada uno cuesta una
        llamada por corrida y no se pueden vender -- solo que ahora eso se
@@ -301,7 +321,7 @@ function syncMain() {
     Logger.log('✅ syncMain OK: ' + rows.length + ' SKUs (' + conWfs + ' en WFS) en ' + elapsed + 's' +
                ' · quedan ' + fetchRestantes_() + ' llamadas hoy');
     logRun_('syncMain', rows.length, elapsed,
-            conWfs + ' en WFS' + (tocaCatalogo ? ' · catálogo completo' : ' · solo WFS'));
+            conWfs + ' en WFS' + (tocaCatalogo ? ' · catálogo completo' : ' · solo WFS') + notaLlegadas);
     return {
       count: rows.length, wfs: conWfs, elapsedSec: elapsed,
       catalogoCompleto: tocaCatalogo,
@@ -860,6 +880,134 @@ function leerStockPropio_() {
                WM_CONFIG.SHEET_MASTER + ': ' + e.message);
   }
   return mapa;
+}
+
+/* ============================================================
+   Registro de llegadas a WFS (1.5)
+   ============================================================
+
+   Walmart MX no entrega "en transito" ni "recibido" con esta cuenta (el
+   endpoint que lo traeria da 401). Lo unico que se ve es el disponible
+   de cada SKU, y de ahi sale la senal: las VENTAS solo bajan el
+   disponible, asi que cuando SUBE entre dos corridas es mercancia que
+   llego (o una devolucion chica).
+
+   Esta hoja guarda cada subida en el momento en que ocurre. Hace falta
+   anotarla al vuelo porque `wfsActualizado` (la fecha de Walmart) se
+   pisa con la siguiente venta del SKU y el dato se pierde.
+
+   La llena el script. No se le ponen filtros. Si falta una columna se
+   agrega AL FINAL; nunca se inserta en medio.                         */
+const LLEGADAS_COLS = ['fecha', 'sku', 'antes', 'despues', 'subio',
+                       'enMano', 'walmartActualizado'];
+
+/**
+ * Mapa sku -> disponible WFS que hay hoy en la hoja maestra (la corrida
+ * anterior). Devuelve null si no se pudo leer: sin base no se anota nada.
+ */
+function leerWfsPrevio_() {
+  try {
+    const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_MASTER);
+    if (!sh) return null;
+    const last = sh.getLastRow();
+    if (last < 2) return null;
+
+    const head = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]
+                   .map(function(h){ return String(h).trim(); });
+    const cSku = head.indexOf('sku') + 1;
+    const cWfs = head.indexOf('wfsDisponible') + 1;
+    if (cSku < 1 || cWfs < 1) return null;
+
+    const n    = last - 1;
+    const skus = sh.getRange(2, cSku, n, 1).getValues();
+    const wfs  = sh.getRange(2, cWfs, n, 1).getValues();
+    const mapa = {};
+    for (let i = 0; i < n; i++) {
+      const sku = String(skus[i][0] || '').trim();
+      if (!sku) continue;
+      const v = wfs[i][0];
+      if (v === '' || v === null || isNaN(Number(v))) continue;
+      mapa[sku] = Number(v);
+    }
+    return mapa;
+  } catch (e) {
+    Logger.log('  ⚠ No pude leer el WFS previo: ' + e.message);
+    return null;
+  }
+}
+
+/**
+ * Compara el disponible WFS de esta corrida contra el previo y anota en
+ * "WFS_Llegadas" cada SKU que SUBIO. Devuelve {skus, unidades}.
+ *
+ * Un SKU que no estaba en la hoja anterior no tiene base: no se inventa
+ * una llegada (podria ser solo que el catalogo lo trajo por primera vez).
+ */
+function registrarLlegadasWfs_(previo, rows) {
+  const res = { skus: 0, unidades: 0 };
+  if (!previo || !rows || !rows.length) return res;
+
+  const ahora = new Date();
+  const filas = [];
+  rows.forEach(function(r){
+    const antes = previo[r.sku];
+    if (antes === undefined) return;
+    const despues = Number(r.wfsDisponible);
+    if (isNaN(despues) || despues <= antes) return;
+
+    // La fecha de Walmart llega como texto ISO (UTC); como Date la hoja
+    // la muestra en la zona del libro, igual que la bitacora.
+    let wmFecha = r.wfsActualizado || '';
+    if (wmFecha) {
+      const d = new Date(wmFecha);
+      if (!isNaN(d.getTime())) wmFecha = d;
+    }
+    filas.push({
+      'fecha': ahora, 'sku': r.sku, 'antes': antes, 'despues': despues,
+      'subio': despues - antes, 'enMano': Number(r.wfsEnMano) || 0,
+      'walmartActualizado': wmFecha,
+    });
+    res.skus++;
+    res.unidades += despues - antes;
+  });
+  // La hoja se crea desde la primera corrida, aunque todavia no haya subidas:
+  // asi se ve que el registro ya esta vivo sin esperar a la primera llegada.
+  const sh = getSheet_(WM_CONFIG.SHEET_LLEGADAS);
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1, 1, 1, LLEGADAS_COLS.length).setValues([LLEGADAS_COLS]);
+    sh.setFrozenRows(1);
+  }
+  if (!filas.length) return res;
+
+  // Encabezado real: se escribe cada valor en SU columna. Si falta alguna
+  // de las nuestras se agrega al final, nunca en medio.
+  const ancho = Math.max(sh.getLastColumn(), 1);
+  const head  = sh.getRange(1, 1, 1, ancho).getValues()[0]
+                  .map(function(h){ return String(h).trim(); });
+  LLEGADAS_COLS.forEach(function(c){
+    if (head.indexOf(c) < 0) {
+      head.push(c);
+      sh.getRange(1, head.length).setValue(c);
+    }
+  });
+
+  const matriz = filas.map(function(f){
+    return head.map(function(h){ return f[h] !== undefined ? f[h] : ''; });
+  });
+  const desde = Math.max(sh.getLastRow(), 1) + 1;
+  sh.getRange(desde, 1, matriz.length, head.length).setValues(matriz);
+
+  const cFecha = head.indexOf('fecha') + 1;
+  const cWm    = head.indexOf('walmartActualizado') + 1;
+  if (cFecha > 0) sh.getRange(desde, cFecha, matriz.length, 1).setNumberFormat('dd/mm/yyyy hh:mm');
+  if (cWm > 0)    sh.getRange(desde, cWm,    matriz.length, 1).setNumberFormat('dd/mm/yyyy hh:mm');
+
+  // Poda por cantidad, solo cuando se pasa por bastante (deleteRows es caro).
+  const total = sh.getLastRow() - 1;
+  if (total > WM_CONFIG.LLEGADAS_MAX_FILAS + 200) {
+    sh.deleteRows(2, total - WM_CONFIG.LLEGADAS_MAX_FILAS);
+  }
+  return res;
 }
 
 function writeMasterSheet_(rows) {
