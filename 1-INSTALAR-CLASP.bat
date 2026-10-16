@@ -32,21 +32,15 @@ for /f "tokens=*" %%V in ('node --version') do echo          %%V
 echo.
 
 echo   %AZUL%[2/3]%FIN%  Instalando clasp . . . . . . . . . .
-echo.
-call npm install -g @google/clasp
+call npm install -g @google/clasp >nul 2>"%TEMP%\wm_e.txt"
 if errorlevel 1 goto NPMFAIL
-echo.
-echo          instalado
-echo.
+echo          ok
 
-echo   %AZUL%[3/3]%FIN%  Autorizando tu cuenta de Google . .
-echo.
-echo          Se abrira tu navegador. Entra con la MISMA
-echo          cuenta donde vive el Apps Script.
-echo.
-pause
+echo   %AZUL%[3/3]%FIN%  Cuenta de Google . . . . . . . . . .
 call clasp login
-echo.
+if errorlevel 1 goto LOGINFAIL
+if not exist "%USERPROFILE%\.clasprc.json" goto LOGINFAIL
+echo          ok
 
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
@@ -70,13 +64,11 @@ echo      de Apps Script, entre  /projects/  y  /edit
 echo.
 
 :APIAVISO
-echo   Apps Script API   solo la primera vez en esta PC
-echo                     script.google.com/home/usersettings
-echo                     prende "Google Apps Script API"
+echo   Apps Script API: script.google.com/home/usersettings
 echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo %VERDE%  Ya puedes usar 5-SUBIR-TODO.bat como siempre.%FIN%
+echo %VERDE%  clasp listo.%FIN%
 echo.
 call :LOGO
 exit /b 0
@@ -84,35 +76,30 @@ exit /b 0
 :NONODE
 echo          NO instalado
 echo.
-echo   %AZUL%----------------------------------------------------%FIN%
-echo.
 echo   %ROJO%x  FALTA NODE.JS%FIN%
-echo.
-echo      Bajalo de https://nodejs.org
-echo      Elige la version LTS y dale siguiente-siguiente.
-echo      Cuando termine, vuelve a correr este archivo.
+echo      Instala la version LTS de https://nodejs.org y vuelve a correr esto.
 echo.
 pause
 exit /b 1
 
 :NPMFAIL
-echo.
-echo   %AZUL%----------------------------------------------------%FIN%
+type "%TEMP%\wm_e.txt"
 echo.
 echo   %ROJO%x  FALLO LA INSTALACION DE CLASP%FIN%
+echo      Corre este archivo como administrador.
 echo.
-echo      Prueba asi: click derecho en este archivo y
-echo      elige "Ejecutar como administrador".
+pause
+exit /b 1
+
+:LOGINFAIL
+echo.
+echo   %ROJO%x  NO SE AUTORIZO LA CUENTA DE GOOGLE%FIN%
+echo      Vuelve a correr este archivo y entra con la cuenta del Apps Script.
 echo.
 pause
 exit /b 1
 
 :LOGO
-REM --- Logo animado ---
-REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
-REM La tecla queda libre para cerrar la ventana.
-REM Solo en salidas exitosas.
-REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto SINLOGO
 if not exist "%~dp0logo-animado.js" goto SINLOGO

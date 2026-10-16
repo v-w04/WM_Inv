@@ -87,29 +87,42 @@ for %%F in (apps-script\*.gs) do set /a N+=1
 echo          !N! archivos .gs
 echo.
 for %%F in (apps-script\*.gs) do echo            %%~nxF
+echo.
+echo   Columnas por posicion . . . . . . . . . .
+call :COLUMNAS
 
 :RESUMEN
 echo.
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 if "!FALTA!"=="1" (
-    echo   %ROJO%^^!  FALTA ALGO%FIN%
-    echo.
-    echo      Revisa arriba que dice "NO". Casi todo se
-    echo      arregla corriendo 1-INSTALAR-CLASP.bat
+    echo   %ROJO%^^!  FALTA ALGO: corre 1-INSTALAR-CLASP.bat%FIN%
 ) else (
-    echo %VERDE%  Todo en orden. Puedes usar 5-SUBIR-TODO.bat%FIN%
+    echo %VERDE%  Todo en orden.%FIN%
 )
 echo.
 call :LOGO
 exit /b 0
 
+:COLUMNAS
+REM Recordatorio, no bloquea: avisa si hay codigo NUEVO que lee columnas por posicion.
+where node >nul 2>&1
+if errorlevel 1 exit /b 0
+if not exist "%~dp0_columnas.js" exit /b 0
+node "%~dp0_columnas.js" >"%TEMP%\col_o.txt" 2>&1
+if errorlevel 2 goto COLNOPUDE
+if errorlevel 1 goto COLNUEVAS
+echo          sin nuevas
+exit /b 0
+:COLNUEVAS
+echo          %ROJO%^^!  columnas por posicion NUEVAS: leer por encabezado%FIN%
+type "%TEMP%\col_o.txt"
+exit /b 0
+:COLNOPUDE
+echo          %ROJO%^^!  no pude revisar columnas%FIN%
+exit /b 0
+
 :LOGO
-REM --- Logo animado ---
-REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
-REM La tecla queda libre para cerrar la ventana.
-REM Solo en salidas exitosas.
-REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto SINLOGO
 if not exist "%~dp0logo-animado.js" goto SINLOGO

@@ -24,9 +24,6 @@ echo.
 echo   ACTUALIZAR                        bajar de GitHub
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
-echo   Corre esto al llegar a una computadora, sobre todo si
-echo   trabajaste en otra la ultima vez.
-echo.
 
 set "GIT=git"
 where git >nul 2>&1
@@ -62,15 +59,11 @@ goto BAJAR
 :HAYLOCALES
 echo          SI hay
 echo.
-"!GIT!" status --short
-echo.
-echo   %ROJO%^^!  TIENES CAMBIOS SIN SUBIR%FIN%
-echo      Si bajas ahora, git va a intentar mezclarlos.
-echo      Para subirlos primero: cierra esto y corre
-echo      5-SUBIR-TODO.bat
+echo   %ROJO%x  TIENES CAMBIOS SIN SUBIR%FIN%
+echo      Corre 5-SUBIR-TODO.bat primero.
 echo.
 pause
-echo.
+exit /b 1
 
 :BAJAR
 REM Se guarda donde estabamos para poder decir despues QUE bajo.
@@ -82,8 +75,7 @@ if exist "%TEMP%\wm_antes.txt" set /p ANTES=<"%TEMP%\wm_antes.txt"
 del "%TEMP%\wm_antes.txt" >nul 2>&1
 
 echo   %AZUL%[2/2]%FIN%  Bajando de origin . . . . . . . . .
-echo.
-"!GIT!" pull origin main
+"!GIT!" pull -q origin main >nul 2>"%TEMP%\wm_e0.txt"
 if errorlevel 1 goto PULLFAIL
 
 set "DESPUES="
@@ -111,37 +103,23 @@ echo   Archivos que cambiaron
 echo.
 "!GIT!" diff --name-only !ANTES! !DESPUES!
 echo.
-echo   Si arriba aparece algo de apps-script\ NO tienes que
-echo   volver a subirlo: ese codigo ya esta en Apps Script
-echo   desde la otra computadora. Esto solo puso al dia tu
-echo   copia local.
-echo.
 
 :FINOK
-echo %VERDE%  Listo para trabajar.%FIN%
+echo %VERDE%  Listo.%FIN%
 echo.
 call :LOGO
 exit /b 0
 
 :PULLFAIL
-echo.
-echo   %AZUL%----------------------------------------------------%FIN%
+type "%TEMP%\wm_e0.txt"
 echo.
 echo   %ROJO%x  FALLO LA BAJADA%FIN%
-echo.
-echo      Si dice "conflict" o "would be overwritten",
-echo      editaste el mismo archivo en las dos computadoras.
-echo      Abre GitHub Desktop: ahi se resuelve mas facil.
+echo      Conflicto o sin internet: abre GitHub Desktop.
 echo.
 pause
 exit /b 1
 
 :LOGO
-REM --- Logo animado ---
-REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
-REM La tecla queda libre para cerrar la ventana.
-REM Solo en salidas exitosas.
-REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto SINLOGO
 if not exist "%~dp0logo-animado.js" goto SINLOGO

@@ -1,14 +1,10 @@
 @echo off
 setlocal enabledelayedexpansion
 cd /d "%~dp0"
+call _config.bat
 title Subir todo
 
 REM ---- Color de marca ----
-REM CMD de Windows 10+ entiende color de 24 bits, pero necesita el
-REM caracter ESC y no hay forma de escribirlo literal en un .bat sin
-REM romper el ASCII puro. Este truco lo saca de la variable de prompt.
-REM Si falla, AZUL y FIN quedan vacios y todo sale en texto normal:
-REM nunca se imprimen codigos sueltos en pantalla.
 set "ESC="
 for /f %%E in ('echo prompt $E ^| cmd') do set "ESC=%%E"
 set "AZUL="
@@ -20,252 +16,268 @@ if defined ESC set "VERDE=%ESC%[38;2;63;185;80m"
 if defined ESC set "ROJO=%ESC%[38;2;248;81;73m"
 if defined ESC set "FIN=%ESC%[0m"
 
+REM Un git que murio a media operacion deja candados y TODO git se niega.
+REM No basta index.lock: HEAD.lock tumba el commit y deja pasar el resto
+REM del bat como si nada.
+del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
+del /f /q ".git\objects\maintenance.lock" >nul 2>&1
+del /f /q ".git\refs\heads\*.lock" >nul 2>&1
+
 echo.
-echo   SUBIR TODO                    Apps Script + GitHub
+echo   SUBIR TODO                  Apps Script y GitHub
 echo   %AZUL%----------------------------------------------------%FIN%
 echo.
 
-REM ================= SEGURO ANTI-CREDENCIALES =================
-REM El repo es publico y git guarda el historial para siempre.
-REM Si quedo una credencial real en un .gs hay que detenerlo
-REM ANTES del commit, no despues.
-echo   %AZUL%[1/3]%FIN%  Credenciales en el codigo . . . . .
-set FUGA=0
-findstr /C:"PON_TU_CLIENT_ID_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 set FUGA=1
-findstr /C:"PON_TU_CLIENT_SECRET_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 set FUGA=1
-findstr /C:"PON_TU_PASSWORD_AQUI" apps-script\Auth.gs >nul 2>&1
-if errorlevel 1 set FUGA=1
-if "!FUGA!"=="1" goto FUGADETECTADA
+echo   %AZUL%[1/4]%FIN%  Credenciales en el codigo . . . . .
+call _seguro.bat
+if errorlevel 1 goto FUGADETECTADA
 echo          limpio
-echo.
+call :COLUMNAS
 
-REM ================= PARTE 1: APPS SCRIPT =================
-echo   %AZUL%[2/3]%FIN%  Apps Script . . . . . . . . . . . .
-echo.
-if not exist ".clasp.json" (
-    echo          sin .clasp.json - saltado
-    goto GITPART
-)
-if not exist "apps-script\appsscript.json" goto VACIA
-call clasp push --force >nul 2>"%TEMP%\wm_clasp.txt"
-if errorlevel 1 goto CLASPFAIL
-echo.
-echo          subido
-echo.
+call :BUSCARGIT
+if errorlevel 1 set "PUBLICAR=?"
+if not "!PUBLICAR!"=="?" call :REVISARVERSION
+
+echo   %AZUL%[2/4]%FIN%  Apps Script . . . . . . . . . . . .
+if not exist ".clasp.json" goto SINCLASP
+REM clasp push --force con la carpeta vacia BORRA el proyecto.
+if not exist "apps-script\appsscript.json" goto SINBACKEND
+call clasp push --force >nul 2>"%TEMP%\wm_e.txt"
+if errorlevel 1 goto CLASPFALLO
+echo          ok
 goto GITPART
 
-:VACIA
+:SINCLASP
+echo          saltado
+goto GITPART
+
+:GITPART
+
+echo   %AZUL%[3/4]%FIN%  Cambios por subir . . . . . . . . .
+if not exist ".git" goto NOTREPO
+"!GIT!" remote get-url origin >nul 2>&1
+if errorlevel 1 goto NOORIGIN
+
+REM Contar sin meter un pipe dentro del for: el git de GitHub Desktop vive
+REM en una ruta con espacios y cmd parte la orden.
+set "TMPST=%TEMP%\wm_c.txt"
+"!GIT!" status --porcelain > "!TMPST!" 2>nul
+set CAMBIOS=0
+for /f %%C in ('find /c /v "" ^< "!TMPST!"') do set CAMBIOS=%%C
+del "!TMPST!" >nul 2>&1
+
+REM Arbol limpio NO quiere decir que no falte nada por subir: puede haber
+REM commits hechos y sin push.
+set PENDIENTES=0
+"!GIT!" rev-list --count @{u}..HEAD > "%TEMP%\wm_p.txt" 2>nul
+if exist "%TEMP%\wm_p.txt" set /p PENDIENTES=<"%TEMP%\wm_p.txt"
+del "%TEMP%\wm_p.txt" >nul 2>&1
+if not defined PENDIENTES set PENDIENTES=0
+
+set "HUBO="
+if "!CAMBIOS!"=="0" goto SINCAMBIOS
+echo          !CAMBIOS! archivo^(s^)
+echo.
+set "MSG=%MSG_DEFAULT%"
+echo.
+
+echo   %AZUL%[4/4]%FIN%  Commit y push . . . . . . . . . . .
+"!GIT!" add -A
+if errorlevel 1 goto FAIL
+"!GIT!" commit -q -m "!MSG!"
+if errorlevel 1 goto COMMITFAIL
+"!GIT!" push -q origin %GH_BRANCH%
+if errorlevel 1 goto PUSHFAIL
+set "HUBO=1"
+goto VERIFICA
+
+:SINCAMBIOS
+echo          ninguno
+echo   %AZUL%[4/4]%FIN%  Commit y push . . . . . . . . . . .
+if "!PENDIENTES!"=="0" goto VERIFICA
+"!GIT!" push -q origin %GH_BRANCH%
+if errorlevel 1 goto PUSHFAIL
+set "HUBO=1"
+
+REM El push devolviendo 0 no prueba que GitHub quedo igual que la carpeta.
+REM Se compara el commit de aqui contra el que de verdad tiene origin.
+:VERIFICA
+set LOCAL=
+set REMOTO=
+"!GIT!" rev-parse HEAD > "%TEMP%\wm_l.txt" 2>nul
+if exist "%TEMP%\wm_l.txt" set /p LOCAL=<"%TEMP%\wm_l.txt"
+del "%TEMP%\wm_l.txt" >nul 2>&1
+"!GIT!" ls-remote origin %GH_BRANCH% > "%TEMP%\wm_r.txt" 2>nul
+if exist "%TEMP%\wm_r.txt" set /p REMOTO=<"%TEMP%\wm_r.txt"
+del "%TEMP%\wm_r.txt" >nul 2>&1
+if not defined LOCAL goto NOCUADRA
+if not defined REMOTO goto NOCUADRA
+if /i not "!LOCAL:~0,10!"=="!REMOTO:~0,10!" goto NOCUADRA
+if defined HUBO echo          subido y verificado
+if not defined HUBO echo          al dia y verificado
+
+echo.
+echo   %AZUL%----------------------------------------------------%FIN%
+echo.
+if "!PUBLICAR!"=="?" goto VER_NOSE
+if defined PUBLICAR goto VER_SI
+echo %VERDE%  Listo.%FIN%
+goto VER_FIN
+
+:VER_SI
+echo   %ROJO%^^!  FALTA PUBLICAR VERSION%FIN%
+goto VER_FIN
+
+:VER_NOSE
+echo   %ROJO%^^!  NO SE SI FALTA PUBLICAR VERSION%FIN%
+
+:VER_FIN
+echo.
+call :LOGO
+exit /b 0
+
+:SINBACKEND
+echo.
 echo   %ROJO%x  apps-script VACIA - no se subio nada%FIN%
 echo.
 pause
 exit /b 1
 
-:CLASPFAIL
+:CLASPFALLO
+type "%TEMP%\wm_e.txt"
 echo.
-echo   %ROJO%^^!  FALLO EL PUSH A APPS SCRIPT%FIN%
-echo.
-echo      Si el error menciona "access_token" o "invalid_grant",
-echo      caduco tu sesion de clasp:
-echo.
-echo        1^) deja que esto termine con GitHub
-echo        2^) corre 1-INSTALAR-CLASP.bat
-echo           ^(entra con victor.walmart.04^)
-echo        3^) corre 2-SUBIR-A-APPSCRIPT.bat
-echo.
-echo      Tus archivos NO se perdieron.
+echo   %ROJO%x  FALLO EL PUSH A APPS SCRIPT%FIN%
+echo      API apagada o sesion caducada: 1-INSTALAR-CLASP.bat
 echo.
 pause
-echo.
+exit /b 1
 
-REM ================= PARTE 2: GITHUB =================
-:GITPART
-echo   %AZUL%[3/3]%FIN%  GitHub . . . . . . . . . . . . . .
+:COLUMNAS
+REM Recordatorio, no bloquea: avisa si hay codigo NUEVO que lee columnas por posicion.
+where node >nul 2>&1
+if errorlevel 1 exit /b 0
+if not exist "%~dp0_columnas.js" exit /b 0
+node "%~dp0_columnas.js" >"%TEMP%\col_o.txt" 2>&1
+if errorlevel 2 goto COLNOPUDE
+if errorlevel 1 goto COLNUEVAS
+exit /b 0
+:COLNUEVAS
+echo          %ROJO%^^!  columnas por posicion NUEVAS: leer por encabezado%FIN%
+type "%TEMP%\col_o.txt"
+exit /b 0
+:COLNOPUDE
+echo          %ROJO%^^!  no pude revisar columnas%FIN%
+exit /b 0
 
+:BUSCARGIT
 set "GIT=git"
 where git >nul 2>&1
-if not errorlevel 1 goto GOTGIT
-
+if not errorlevel 1 exit /b 0
 for /d %%D in ("%LOCALAPPDATA%\GitHubDesktop\app-*") do (
     if exist "%%D\resources\app\git\cmd\git.exe" set "GIT=%%D\resources\app\git\cmd\git.exe"
 )
 if exist "%ProgramFiles%\Git\cmd\git.exe" set "GIT=%ProgramFiles%\Git\cmd\git.exe"
+if "!GIT!"=="git" exit /b 1
+exit /b 0
 
-if "!GIT!"=="git" (
-    echo          NO encuentro git
-    echo.
-    echo   x  Usa GitHub Desktop para esta parte.
-    echo.
-    pause
-    exit /b 1
-)
-
-:GOTGIT
-REM Candado huerfano de un git que murio a medias.
-del /f /q ".git\index.lock" ".git\HEAD.lock" ".git\config.lock" >nul 2>&1
-del /f /q ".git\objects\maintenance.lock" >nul 2>&1
-del /f /q ".git\refs\heads\*.lock" >nul 2>&1
-
-REM Arbol limpio NO quiere decir "nada que subir": puede haber
-REM commits hechos y sin push. Si el bat se va ahi, la version se
-REM queda atorada en esta compu.
-set CAMBIOS=1
-"!GIT!" diff-index --quiet HEAD -- 2>nul
-if not errorlevel 1 (
-    "!GIT!" ls-files --others --exclude-standard >"%TEMP%\wm_n5.txt" 2>nul
-    for %%F in ("%TEMP%\wm_n5.txt") do if %%~zF EQU 0 set CAMBIOS=0
-    del "%TEMP%\wm_n5.txt" >nul 2>&1
-)
-set PENDIENTES=0
-"!GIT!" rev-list --count @{u}..HEAD > "%TEMP%\wm_p5.txt" 2>nul
-if exist "%TEMP%\wm_p5.txt" set /p PENDIENTES=<"%TEMP%\wm_p5.txt"
-del "%TEMP%\wm_p5.txt" >nul 2>&1
-if not defined PENDIENTES set PENDIENTES=0
-REM Hace falta publicar version si cambio alguno de los archivos que
-REM ejecuta el Web App. Se revisan las DOS fuentes: lo que esta sin
-REM commitear Y lo que ya esta commiteado pero sin subir. Si solo se
-REM miraba lo primero, un commit pendiente pasaba en verde sin avisar.
-"!GIT!" status --porcelain > "%TEMP%\wm_cambios.txt" 2>nul
-"!GIT!" diff --name-only @{u}..HEAD >> "%TEMP%\wm_cambios.txt" 2>nul
+REM Decide SOLA si hay que publicar version nueva del Web App. Son los
+REM archivos que corre la URL del dashboard; el menu del Sheet y los
+REM triggers no pasan por ahi. Va ANTES del commit: despues el status
+REM ya no dice nada.
+:REVISARVERSION
 set "PUBLICAR="
-findstr /I /C:"apps-script/WebAPI.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
-findstr /I /C:"apps-script/Auth.gs"   "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
-findstr /I /C:"apps-script/Sync.gs"   "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
-findstr /I /C:"apps-script/Api.gs"    "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
-findstr /I /C:"apps-script/Config.gs" "%TEMP%\wm_cambios.txt" >nul 2>&1 && set "PUBLICAR=1"
-del "%TEMP%\wm_cambios.txt" >nul 2>&1
-
-if "!CAMBIOS!"=="0" (
-    if "!PENDIENTES!"=="0" goto SINCAMBIOS
-    "!GIT!" push -q origin main
-    if errorlevel 1 goto PUSHFAIL
-    goto VERIFICA
+set "TMPV=%TEMP%\wm_v.txt"
+"!GIT!" status --porcelain > "!TMPV!" 2>nul
+if not exist "!TMPV!" goto NOSEVERSION
+"!GIT!" diff --name-only @{u}..HEAD >> "!TMPV!" 2>nul
+for %%A in (WebAPI.gs Auth.gs Sync.gs Api.gs Config.gs) do (
+    findstr /I /C:"apps-script/%%A" "!TMPV!" >nul 2>&1 && set "PUBLICAR=1"
 )
-echo.
-"!GIT!" status --short
-echo.
-
-set "MSG="
-set /p "MSG=   Mensaje del commit [Enter = automatico]: "
-if "!MSG!"=="" set "MSG=Actualiza dashboard de inventario Walmart"
-echo.
-
-"!GIT!" add -A
-if errorlevel 1 goto FAILGIT
-"!GIT!" commit -q -m "!MSG!" -m "Co-Authored-By: Claude Opus 5 ^<noreply@anthropic.com^>"
-if errorlevel 1 goto FAILGIT
-"!GIT!" push -q origin main
-if errorlevel 1 goto PUSHFAIL
-
-:VERIFICA
-REM El verde se apoya en la realidad: HEAD local contra HEAD remoto.
-set LOCAL=
-set REMOTO=
-"!GIT!" rev-parse HEAD > "%TEMP%\wm_l5.txt" 2>nul
-if exist "%TEMP%\wm_l5.txt" set /p LOCAL=<"%TEMP%\wm_l5.txt"
-del "%TEMP%\wm_l5.txt" >nul 2>&1
-"!GIT!" ls-remote origin main > "%TEMP%\wm_r5.txt" 2>nul
-if exist "%TEMP%\wm_r5.txt" set /p REMOTO=<"%TEMP%\wm_r5.txt"
-del "%TEMP%\wm_r5.txt" >nul 2>&1
-if not defined LOCAL goto NOCUADRA
-if not defined REMOTO goto NOCUADRA
-if /i not "!LOCAL:~0,10!"=="!REMOTO:~0,10!" goto NOCUADRA
-echo          subido y verificado
-goto SIGUE
-:SINCAMBIOS
-echo          sin cambios
-:SIGUE
-echo.
-
-
-:FIN
-echo.
-echo   %AZUL%----------------------------------------------------%FIN%
-echo.
-
-if defined PUBLICAR goto SIPUBLICAR
-echo %VERDE%  No hace falta publicar version.%FIN%
-echo.
-call :LOGO
+del "!TMPV!" >nul 2>&1
 exit /b 0
 
-:SIPUBLICAR
-echo   %ROJO%^^!  FALTA PUBLICAR VERSION%FIN%
-echo.
-call :LOGO
+:NOSEVERSION
+set "PUBLICAR=?"
 exit /b 0
 
-:FUGADETECTADA
-echo          ALERTA
+:NOCUADRA
+echo          %ROJO%no cuadra con GitHub%FIN%
 echo.
-echo   %AZUL%----------------------------------------------------%FIN%
+echo   %ROJO%x  NO PUDE CONFIRMAR QUE SUBIO%FIN%
+echo      Abre GitHub Desktop y revisa si quedo el ultimo commit.
 echo.
-echo   %ROJO%x  DETENIDO - POSIBLE CREDENCIAL EN Auth.gs%FIN%
+pause
+exit /b 1
+
+:FAIL
+echo          fallo
 echo.
-echo      Un placeholder fue reemplazado. Si ahi quedo una
-echo      credencial real y la subes, queda en el historial
-echo      publico de git PARA SIEMPRE.
+echo   %ROJO%x  FALLO GIT%FIN%
+echo      Abre GitHub Desktop: ahi se ve que paso.
 echo.
-echo      Regresa los valores a sus placeholders:
-echo        PON_TU_CLIENT_ID_AQUI
-echo        PON_TU_CLIENT_SECRET_AQUI
-echo        PON_TU_PASSWORD_AQUI
+pause
+exit /b 1
+
+:COMMITFAIL
+echo          fallo
 echo.
-echo      Tus credenciales YA estan en PropertiesService.
-echo      No hacen falta en el codigo.
+echo   %ROJO%x  NO SE HIZO EL COMMIT%FIN%
+echo      Nada se subio. Abre GitHub Desktop y revisa.
 echo.
 pause
 exit /b 1
 
 :PUSHFAIL
+echo          fallo
 echo.
-echo   %AZUL%----------------------------------------------------%FIN%
-echo.
-echo   %ROJO%x  FALLO EL PUSH A GITHUB%FIN%
-echo.
-echo      "Authentication failed"
-echo         abre GitHub Desktop una vez para renovar sesion
-echo      "rejected - non-fast-forward"
-echo         alguien subio cambios: corre 0-ACTUALIZAR.bat
+echo   %ROJO%x  FALLO EL PUSH%FIN%
+echo      Sin internet o sin permiso. Si alguien subio antes: 0-ACTUALIZAR.bat
 echo.
 pause
 exit /b 1
 
-:NOCUADRA
+:NOGIT
+echo          sin git
 echo.
-echo   %ROJO%x  NO PUDE CONFIRMAR QUE SUBIO%FIN%
-echo      Revisalo en GitHub Desktop antes de seguir.
+echo   %ROJO%x  NO ENCUENTRO GIT%FIN%
+echo      Instala GitHub Desktop o git-scm.com/download/win
 echo.
 pause
 exit /b 1
 
-:FAILGIT
+:NOTREPO
+echo          no es repo
 echo.
-echo   %ROJO%x  FALLO EL COMMIT%FIN%
-echo      Abre GitHub Desktop y revisa el repositorio.
+echo   %ROJO%x  ESTA CARPETA NO ES UN REPOSITORIO%FIN%
+echo      GitHub Desktop ^> File ^> Add local repository
+echo.
+pause
+exit /b 1
+
+:NOORIGIN
+echo          sin origin
+echo.
+echo   %ROJO%x  EL REPO NO APUNTA A GITHUB%FIN%
+echo      GitHub Desktop ^> Publish repository, y llena _config.bat
+echo.
+pause
+exit /b 1
+
+:FUGADETECTADA
+echo.
+echo   %ROJO%x  DETENIDO - POSIBLE CREDENCIAL EN EL CODIGO%FIN%
+echo      Quitala del archivo; si ya se subio antes, rotala.
 echo.
 pause
 exit /b 1
 
 :LOGO
-REM --- Logo animado ---
-REM Va ANTES del pause: se dibuja solo, al terminar el trabajo.
-REM La tecla queda libre para cerrar la ventana.
-REM Solo en salidas exitosas.
-REM Si falta node o el .js, no pasa nada: se salta en silencio.
 where node >nul 2>&1
 if errorlevel 1 goto SINLOGO
 if not exist "%~dp0logo-animado.js" goto SINLOGO
-REM SIN cls: el logo se dibuja DEBAJO del reporte, no encima.
-REM Argumentos: movimiento color segundos alto-en-filas
-REM   segundos 0 = gira hasta que se presione una tecla.
-REM   El propio .js imprime el aviso y espera la tecla, por eso
-REM   aqui ya NO hay pause: haria falta presionar dos veces.
 node "%~dp0logo-animado.js" giro marca 0 12
 goto :eof
 
 :SINLOGO
-REM Sin node o sin el .js, el pause de siempre.
 pause
 goto :eof

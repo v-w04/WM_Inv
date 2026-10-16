@@ -58,8 +58,13 @@ const WM_CONFIG = {
   // 1.6 · 16/10/2026 — bitácora más corta: LOG_DIAS 30→10 y LOG_MAX_FILAS
   //        5000→1700. La poda ya era automática (logRun_ → podarLog_); solo
   //        se apretaron los límites.
+  // 1.7 · 16/10/2026 — Bloqueados: la columna "motivo" se llena sola con lo
+  //        que dice Walmart del SKU (publishedStatus y, si lo da, su motivo).
+  //        Solo celdas vacías o puestas por el script; lo que ella escriba o
+  //        cualquier fórmula no se toca. Corre en cada syncMain y en "Refrescar
+  //        lista de no publicados". Cero llamadas a la API.
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.6',
+  VERSION: '1.7',
   VERSION_FECHA: '2026-10-16',
 
   // ------- Walmart API -------

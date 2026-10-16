@@ -261,6 +261,101 @@ function leerBloqueados_() {
   return out;
 }
 
+/* ============================================================
+   MOTIVO AUTOMATICO EN "Bloqueados"
+   ============================================================ */
+
+/**
+ * Lo que Walmart dice de un SKU, tal como se escribe en la columna
+ * "motivo" de Bloqueados: el estado (UNPUBLISHED, SYSTEM_PROBLEM...) y,
+ * si Walmart da uno, su motivo.  Ej.: "UNPUBLISHED"  o
+ * "SYSTEM_PROBLEM · Brand not approved".
+ */
+const BLOQ_MOTIVO_FUERA = 'FUERA_DE_CATALOGO';
+
+/** Un motivo que el propio script escribio antes (se puede refrescar). */
+const BLOQ_MOTIVO_AUTO = /^(PUBLISHED|UNPUBLISHED|SYSTEM_PROBLEM|STAGE|READY_TO_PUBLISH|IN_PROGRESS|ACTIVE|RETIRED|ARCHIVED|FUERA_DE_CATALOGO)( \u00b7 .*)?$/;
+
+function motivoDeWalmart_(r) {
+  const est = String((r && r.publishedStatus) || '').trim();
+  const mot = String((r && r.motivoWalmart) || '').trim();
+  if (!est) return '';
+  return mot ? (est + ' \u00b7 ' + mot) : est;
+}
+
+/**
+ * Rellena la columna "motivo" de la hoja Bloqueados con lo que dice
+ * Walmart (hoja Inventario) de cada SKU. Cero llamadas a la API.
+ *
+ * Reglas, porque la hoja es de la usuaria:
+ *  - La columna se busca por ENCABEZADO ("sku", "motivo"), donde este.
+ *    Si falta alguna, no escribe nada y lo deja en el log.
+ *  - Solo toca la columna motivo, y solo celdas VACIAS o con un valor
+ *    que el propio script puso antes (un estado de Walmart). Lo que ella
+ *    escriba a mano, o cualquier formula, no se toca.
+ *  - Solo escribe lo que cambio, en tramos contiguos; no reescribe la
+ *    columna entera ni toca formatos, validaciones ni otras columnas.
+ *
+ * @param {Array} rows filas del catalogo (sku, publishedStatus, motivoWalmart)
+ * @return {{escritas:number, saltadas:number, ok:boolean}}
+ */
+function rellenarMotivoBloqueados_(rows) {
+  const out = { escritas: 0, saltadas: 0, ok: false };
+  const sh = getSpreadsheet_().getSheetByName(WM_CONFIG.SHEET_BLOQUEADOS);
+  if (!sh) return out;
+  const last = sh.getLastRow();
+  if (last < 2) { out.ok = true; return out; }
+
+  const ancho = Math.max(sh.getLastColumn(), BLOQ_COLS.length);
+  const head = sh.getRange(1, 1, 1, ancho).getValues()[0]
+                 .map(function(h){ return String(h).trim(); });
+  const cSku = head.indexOf('sku') + 1;       // 0 = no esta
+  const cMot = head.indexOf('motivo') + 1;
+  if (!cSku || !cMot) {
+    Logger.log('  \u26a0 "' + WM_CONFIG.SHEET_BLOQUEADOS + '" no trae los encabezados ' +
+               '"sku" y "motivo": no se rellena el motivo.');
+    return out;
+  }
+
+  const n = last - 1;
+  const rngMot = sh.getRange(2, cMot, n, 1);
+  const skus  = sh.getRange(2, cSku, n, 1).getValues();
+  const vals  = rngMot.getValues();
+  const forms = rngMot.getFormulas();
+
+  const porSku = {};
+  (rows || []).forEach(function(r){ if (r && r.sku) porSku[String(r.sku).trim()] = r; });
+
+  // Nuevo valor por fila (null = no tocar)
+  const nuevo = [];
+  for (let i = 0; i < n; i++) {
+    const sku = String(skus[i][0] || '').trim();
+    nuevo.push(null);
+    if (!sku) continue;
+    const actual = String(vals[i][0] || '').trim();
+    const esFormula = !!forms[i][0];
+    const editable = !esFormula && (actual === '' || BLOQ_MOTIVO_AUTO.test(actual));
+    if (!editable) { out.saltadas++; continue; }
+    const r = porSku[sku];
+    const txt = r ? motivoDeWalmart_(r) : BLOQ_MOTIVO_FUERA;
+    if (txt && txt !== actual) nuevo[i] = txt;
+  }
+
+  // Escribir solo tramos contiguos de celdas que cambiaron
+  let i = 0;
+  while (i < n) {
+    if (nuevo[i] === null) { i++; continue; }
+    let j = i;
+    const bloque = [];
+    while (j < n && nuevo[j] !== null) { bloque.push([nuevo[j]]); j++; }
+    sh.getRange(2 + i, cMot, bloque.length, 1).setValues(bloque);
+    out.escritas += bloque.length;
+    i = j;
+  }
+  out.ok = true;
+  return out;
+}
+
 /**
  * Devuelve el conjunto de SKUs que NO se deben consultar en el barrido.
  *
@@ -540,6 +635,17 @@ function refrescarNoPublicados() {
     return escribirNoPublicados_(rows, bloq);
   });
 
+  // El motivo de Walmart en Bloqueados (va aparte: si falla, lo demas sigue)
+  let nMotivo = 0;
+  try {
+    nMotivo = pubConReintento_('motivo en ' + WM_CONFIG.SHEET_BLOQUEADOS, function(){
+      return rellenarMotivoBloqueados_(rows);
+    }).escritas;
+  } catch (eMot) {
+    Logger.log('  \u26a0 No pude rellenar el motivo en "' + WM_CONFIG.SHEET_BLOQUEADOS +
+               '": ' + eMot.message);
+  }
+
   const lineas = [];
   if (creada) {
     lineas.push('Creé la hoja "' + WM_CONFIG.SHEET_BLOQUEADOS + '".');
@@ -557,6 +663,8 @@ function refrescarNoPublicados() {
   lineas.push('  ' + c['MAL_PUBLICADO'] + '  mal publicados');
   lineas.push('  ' + c['REPUBLICADO']   + '  republicados (siguen sin salir)');
   lineas.push('  ' + c['BLOQUEADO']     + '  bloqueados por ti');
+  if (nMotivo) lineas.push('  ' + nMotivo + '  motivos de Walmart escritos en "' +
+                           WM_CONFIG.SHEET_BLOQUEADOS + '"');
 
   if (bloq.basura) {
     lineas.push('');

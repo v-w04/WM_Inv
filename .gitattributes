@@ -1,2 +1,5 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Los .bat deben quedar con CRLF o CMD no los parsea bien
+*.bat text eol=crlf

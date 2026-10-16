@@ -6,3 +6,5 @@
 **/.claspignore
 **/*.bat
 **/*.txt
+**/*.cfg
+docs/**

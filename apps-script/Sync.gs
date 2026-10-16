@@ -314,6 +314,21 @@ function syncMain() {
       }
     }
 
+    /* Motivo de Walmart en la hoja "Bloqueados" (columna motivo). Cada
+       corrida, porque ella agrega SKUs a mano en cualquier momento. Solo
+       escribe las celdas que cambiaron; va en try aparte por lo mismo
+       que No_Publicados: es comodidad, no el trabajo principal.        */
+    try {
+      const m = rellenarMotivoBloqueados_(rows);
+      if (m.escritas) {
+        Logger.log('  Bloqueados: ' + m.escritas + ' motivos de Walmart escritos');
+        notaLlegadas += ' \u00b7 motivos: ' + m.escritas;
+      }
+    } catch (eMot) {
+      Logger.log('  \u26a0 No pude rellenar el motivo en "' +
+                 WM_CONFIG.SHEET_BLOQUEADOS + '": ' + eMot.message);
+    }
+
     invalidateCache_();
 
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
