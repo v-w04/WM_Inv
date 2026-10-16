@@ -55,9 +55,12 @@ const WM_CONFIG = {
   //          despues, cuanto subio). Las ventas solo bajan el stock, asi que
   //          una subida es mercancia que llego (o una devolucion)
   //        · no hace llamadas nuevas a Walmart ni cambia nada de lo anterior
+  // 1.6 · 16/10/2026 — bitácora más corta: LOG_DIAS 30→10 y LOG_MAX_FILAS
+  //        5000→1700. La poda ya era automática (logRun_ → podarLog_); solo
+  //        se apretaron los límites.
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.5',
-  VERSION_FECHA: '2026-10-05',
+  VERSION: '1.6',
+  VERSION_FECHA: '2026-10-16',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',
@@ -98,12 +101,13 @@ const WM_CONFIG = {
 
   // ------- Bitácora -------
   // Crece ~144 filas al día (96 syncMain + 48 chunk).
-  // 30 días ≈ 4,300 filas: suficiente para rastrear algo que se rompió
-  // mientras nadie veía, y chico para la hoja.
-  // No se poda en cada corrida (deleteRows es caro): solo cuando pasa
-  // de LOG_MAX_FILAS, o sea como una vez cada 5 días.
-  LOG_DIAS:      30,
-  LOG_MAX_FILAS: 5000,
+  // Se queda con los últimos 10 días (~1,450 filas): alcanza para rastrear
+  // algo que se rompió y la hoja se mantiene ligera.
+  // La poda es AUTOMÁTICA: la hace logRun_ al final de cada corrida, pero
+  // solo trabaja cuando la hoja pasa de LOG_MAX_FILAS (deleteRows es caro),
+  // o sea cada ~2 días borra los 2 días más viejos. Sin trigger aparte.
+  LOG_DIAS:      10,
+  LOG_MAX_FILAS: 1700,
 
   // ------- PropertiesService keys -------
   PROP_CLIENT_ID:     'WM_CLIENT_ID',
