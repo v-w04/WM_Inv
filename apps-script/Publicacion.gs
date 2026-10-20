@@ -201,29 +201,15 @@ function leerBloqueados_() {
        quedaba excluido, la cola brincaba de 1,678 a 3,289 y los bloqueos
        dejaban de aplicarse sin un solo error.
 
-       Si la fila de encabezados no esta (alguien la borro), se cae al
-       orden historico A..F y se avisa en la bitacora.                 */
+       Si falta "sku" o "estado" (alguien borro o renombro el encabezado),
+       NO se adivina por posicion: colsDe_ deja un ERROR en Sync_Log y la
+       lectura queda en ok=false, o sea que no se excluye a nadie (el
+       barrido sigue, solo que sin los bloqueos) hasta que se arregle.   */
     const ancho = Math.max(sh.getLastColumn(), BLOQ_COLS.length);
-    const head  = sh.getRange(1, 1, 1, ancho).getValues()[0]
-                    .map(function(h){ return String(h).trim(); });
-    const idx = {};
-    head.forEach(function(h, i){ if (h && idx[h] === undefined) idx[h] = i; });
-
-    const porNombre = (idx['sku'] !== undefined && idx['estado'] !== undefined);
-    if (!porNombre) {
-      out.sinEncabezados = true;
-      Logger.log('  ⚠ "' + WM_CONFIG.SHEET_BLOQUEADOS + '" no trae los ' +
-                 'encabezados "sku" y "estado". Se leen las columnas por ' +
-                 'posicion (A..F) como antes.');
-    }
-    const col = function(nombre, porDefecto){
-      return (porNombre && idx[nombre] !== undefined) ? idx[nombre] : porDefecto;
-    };
-    const cSku  = col('sku', 0);
-    const cEst  = col('estado', 1);
-    const cMot  = col('motivo', 2);
-    const cNue  = col('skuNuevo', 3);
-    const cNota = col('nota', 5);
+    const head  = sh.getRange(1, 1, 1, ancho).getValues()[0];
+    const c = colsDe_(head, ['sku', 'estado'], WM_CONFIG.SHEET_BLOQUEADOS,
+                      ['motivo', 'skuNuevo', 'nota']);
+    const cSku = c.sku, cEst = c.estado, cMot = c.motivo, cNue = c.skuNuevo, cNota = c.nota;
 
     const vals = sh.getRange(2, 1, last - 1, ancho).getValues();
 

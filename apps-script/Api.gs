@@ -707,7 +707,7 @@ function categoriaDeShelf_(ruta, productType) {
   const raiz = String(r[0] || '').toLowerCase();
   if (raiz === 'home page' || raiz === 'root') r = r.slice(1);
 
-  if (r.length >= 2) return String(r[1]).trim();   // el departamento
+  if (r.length >= 2) return String(r[1]).trim();   // col-fija: el departamento (parte de la ruta, no una hoja)
   if (r.length === 1) return String(r[0]).trim();
   return productType || '';
 }

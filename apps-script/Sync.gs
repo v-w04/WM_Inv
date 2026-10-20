@@ -470,15 +470,15 @@ function syncRegularChunk() {
     const viejos = [];
 
     for (let i = 0; i < datos.length; i++) {
-      const sku = String(datos[i][0] || '').trim();
+      const sku = String(datos[i][D_.SKU] || '').trim();
       if (!sku) continue;
       // Los BLOQUEADOS son decision de la duena: no se consultan nunca.
       if (esBloqueado(i)) continue;
-      const tieneDato = datos[i][1] !== '' && datos[i][1] !== null;
+      const tieneDato = datos[i][D_.CANT] !== '' && datos[i][D_.CANT] !== null;
       if (!tieneDato) {
         nuevos.push(i);
       } else {
-        const ts = datos[i][3] instanceof Date ? datos[i][3].getTime() : 0;
+        const ts = datos[i][D_.REV] instanceof Date ? datos[i][D_.REV].getTime() : 0;
         viejos.push({ i: i, ts: ts });
       }
     }
@@ -503,7 +503,7 @@ function syncRegularChunk() {
       if (Date.now() > deadline) break;
 
       const idx = cola[k];
-      const sku = String(datos[idx][0]).trim();
+      const sku = String(datos[idx][D_.SKU]).trim();
 
       /* Una excepción aquí (típicamente PropertiesService pasándose de
          operaciones) escapaba del bucle y se saltaba el bloque de
@@ -533,9 +533,9 @@ function syncRegularChunk() {
       if (inv.ok) {
         fallosSeguidos = 0;
         hechos++;
-        datos[idx][1] = inv.qty;
-        datos[idx][2] = inv.unit;
-        datos[idx][3] = new Date();
+        datos[idx][D_.CANT] = inv.qty;
+        datos[idx][D_.UNI] = inv.unit;
+        datos[idx][D_.REV] = new Date();
         tocados.push(idx);
       } else {
         errores++;
@@ -583,7 +583,7 @@ function syncRegularChunk() {
       let ini = -1, prev = -2, movidas = 0;
       for (let t = 0; t < tocados.length; t++) {
         const i = tocados[t];
-        if (String(vivo[i][0] || '').trim() !== String(datos[i][0] || '').trim()) {
+        if (String(vivo[i][0] || '').trim() !== String(datos[i][D_.SKU] || '').trim()) {
           movidas++;
           continue;   // la hoja se movio bajo los pies: esa fila no se escribe
         }
@@ -603,20 +603,20 @@ function syncRegularChunk() {
         const n = b[1] - b[0] + 1;
         const vals = [];
         for (let k = b[0]; k <= b[1]; k++) {
-          const propio = Number(datos[k][1]);
+          const propio = Number(datos[k][D_.CANT]);
           const wfsQty = Number(colWfs[k][0]) || 0;
           // stockTotal = lo que hay en WFS + lo que hay en bodega propia.
-          vals.push([propio, wfsQty + propio, datos[k][3]]);
+          vals.push([propio, wfsQty + propio, datos[k][D_.REV]]);
         }
         if (contiguas) {
           shW.getRange(b[0] + 2, cProp, n, 3).setValues(vals);
         } else {
           shW.getRange(b[0] + 2, cProp, n, 1)
-             .setValues(vals.map(function(v){ return [v[0]]; }));
+             .setValues(vals.map(function(v){ return [v[V_.PROP]]; }));
           shW.getRange(b[0] + 2, cTot,  n, 1)
-             .setValues(vals.map(function(v){ return [v[1]]; }));
+             .setValues(vals.map(function(v){ return [v[V_.TOT]]; }));
           shW.getRange(b[0] + 2, cRev,  n, 1)
-             .setValues(vals.map(function(v){ return [v[2]]; }));
+             .setValues(vals.map(function(v){ return [v[V_.REV]]; }));
         }
         escritas += n;
       });
@@ -649,10 +649,10 @@ function syncRegularChunk() {
        Ni el alto de la hoja ni los bloqueados inflan el porcentaje.     */
     let conDato = 0, conSku = 0;
     for (let i = 0; i < datos.length; i++) {
-      if (!String(datos[i][0] || '').trim()) continue;
+      if (!String(datos[i][D_.SKU] || '').trim()) continue;
       if (esBloqueado(i)) continue;
       conSku++;
-      if (datos[i][1] !== '' && datos[i][1] !== null) conDato++;
+      if (datos[i][D_.CANT] !== '' && datos[i][D_.CANT] !== null) conDato++;
     }
     const pct = conSku ? Math.round(conDato / conSku * 100) : 0;
     const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
@@ -728,6 +728,14 @@ function reiniciarBarrido() {
 /* ============================================================
    Escritura de hojas
    ============================================================ */
+/* Forma interna de una fila del barrido: [sku, cantidad, unidad, revisadoEn].
+   Es una lista en memoria (no una hoja): las columnas REALES de Inventario se
+   buscan siempre por encabezado (cSku, cProp, cRev...). Estos nombres solo
+   evitan escribir 0/1/2/3 sueltos.                                          */
+const D_ = { SKU: 0, CANT: 1, UNI: 2, REV: 3 };
+/* Lo que se escribe de vuelta: [invNormal, stockTotal, invRevisado]. */
+const V_ = { PROP: 0, TOT: 1, REV: 2 };
+
 /**
  * Orden de columnas en la hoja Inventario.
  * Las primeras 9 son las que se usan a diario — mismo orden que en el dashboard.
@@ -1130,8 +1138,8 @@ function ensureRegularSheet_(skus, excluidos) {
   if (lastRow > 1) {
     const old = sh.getRange(2, 1, lastRow - 1, 4).getValues();
     old.forEach(function(r){
-      const s = String(r[0] || '').trim();
-      if (s) { previo[s] = [r[1], r[2], r[3]]; previoOrden.push(s); }
+      const s = String(r[D_.SKU] || '').trim();
+      if (s) { previo[s] = [r[D_.CANT], r[D_.UNI], r[D_.REV]]; previoOrden.push(s); }
     });
   }
 
@@ -1243,8 +1251,8 @@ function actualizarStockEnMaster_(datosRegular) {
     // Mapa de lo recién consultado
     const nuevo = {};
     datosRegular.forEach(function(r){
-      const s = String(r[0] || '').trim();
-      if (s) nuevo[s] = { cant: r[1], rev: r[3] };
+      const s = String(r[D_.SKU] || '').trim();
+      if (s) nuevo[s] = { cant: r[D_.CANT], rev: r[D_.REV] };
     });
 
     const n = last - 1;

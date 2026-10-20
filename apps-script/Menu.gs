@@ -61,6 +61,7 @@ function onOpenMenu(e) {
     .addSubMenu(ui.createMenu('🔧 Diagnóstico')
       .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
       .addItem('SKUs sin dato de inventario',        'mnu_sinDato')
+      .addItem('Revisar columnas de las hojas',      'mnu_revisarColumnas')
       .addSeparator()
       .addItem('Probar conexión al Sheet',          'mnu_testSheet')
       .addItem('Probar login con Walmart',          'mnu_testAuth')
@@ -88,6 +89,7 @@ function onOpenMenu(e) {
       .addItem('Limpiar contadores viejos (1 vez)', 'mnu_migrarContadores'))
 
     .addSeparator()
+    .addItem('🗂️ Ordenar hojas e índice',            'mnu_ordenarLibro')
     .addItem('🔗 Abrir el dashboard',               'mnu_abrirDashboard')
 
     .addToUi();
@@ -510,6 +512,16 @@ function mnu_migrarContadores() {
     'Ya no. Cada cuenta lleva su propia cuenta de llamadas, que es como\n' +
     'Google la cobra en realidad.\n\n' +
     'Esto se corre una sola vez.');
+}
+
+/** Revisa que cada hoja traiga los encabezados que el sync necesita (Columnas.gs). */
+function mnu_revisarColumnas() {
+  try { revisarColumnas(); } catch (e) { dialogo_('Error', String(e && e.message || e)); }
+}
+
+/** Colores, orden, indice, guia y formato del libro (Organizar.gs). */
+function mnu_ordenarLibro() {
+  try { orgOrdenar(); } catch (e) { dialogo_('Error', String(e && e.message || e)); }
 }
 
 function mnu_abrirDashboard() {

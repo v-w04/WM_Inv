@@ -63,9 +63,16 @@ const WM_CONFIG = {
   //        Solo celdas vacías o puestas por el script; lo que ella escriba o
   //        cualquier fórmula no se toca. Corre en cada syncMain y en "Refrescar
   //        lista de no publicados". Cero llamadas a la API.
+  // 1.8 · 20/10/2026 — Columnas por encabezado (Columnas.gs) y libro ordenado:
+  //        · Bloqueados ya no cae a posiciones A..F si falta "sku" o "estado":
+  //          deja un ERROR en Sync_Log y no excluye a nadie hasta que se arregle.
+  //        · Menú nuevo: "Revisar columnas de las hojas" y "Ordenar hojas e
+  //          índice" (Organizar.gs: colores, orden, índice, guía del menú,
+  //          filtros y formato de precio/fecha por encabezado).
+  //        · Las lecturas internas del barrido usan nombres (D_ / V_), no 0..3.
   // Si tocas algo, sube el número y anota qué cambió.
-  VERSION: '1.7',
-  VERSION_FECHA: '2026-10-16',
+  VERSION: '1.8',
+  VERSION_FECHA: '2026-10-20',
 
   // ------- Walmart API -------
   BASE_URL:    'https://marketplace.walmartapis.com',

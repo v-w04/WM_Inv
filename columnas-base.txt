@@ -1,13 +1,1 @@
-Api.gs|if (r.length >= 2) return String(r[1]).trim(); // el departamento
-Sync.gs|const tieneDato = datos[i][1] !== '' && datos[i][1] !== null;
-Sync.gs|const ts = datos[i][3] instanceof Date ? datos[i][3].getTime() : 0;
-Sync.gs|datos[idx][1] = inv.qty;
-Sync.gs|datos[idx][2] = inv.unit;
-Sync.gs|datos[idx][3] = new Date();
-Sync.gs|const propio = Number(datos[k][1]);
-Sync.gs|vals.push([propio, wfsQty + propio, datos[k][3]]);
-Sync.gs|.setValues(vals.map(function(v){ return [v[1]]; }));
-Sync.gs|.setValues(vals.map(function(v){ return [v[2]]; }));
-Sync.gs|if (datos[i][1] !== '' && datos[i][1] !== null) conDato++;
-Sync.gs|if (s) { previo[s] = [r[1], r[2], r[3]]; previoOrden.push(s); }
-Sync.gs|if (s) nuevo[s] = { cant: r[1], rev: r[3] };
+
