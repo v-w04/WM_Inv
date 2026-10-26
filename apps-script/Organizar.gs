@@ -131,10 +131,8 @@ function orgFormatosDef_() {
   d[WM_CONFIG.SHEET_LLEGADAS]   = { fechaHora: ['fecha', 'walmartActualizado'] };
   return d;
 }
-function orgNorm_(t) {
-  return String(t === null || t === undefined ? '' : t).normalize('NFD').replace(/[̀-ͯ]/g, '')
-    .toUpperCase().replace(/\s+/g, ' ').trim();
-}
+/** Mismo normalizado que los encabezados (normEnc_ en Columnas.gs): un solo lugar. */
+function orgNorm_(t) { return normEnc_(t); }
 
 /** Reintenta etapas que Sheets agota por tiempo (4 intentos, 10 s × n). Otros errores salen de una vez. */
 function orgReintentar_(fn) {
@@ -193,7 +191,7 @@ function orgHuella_(h) {
   return nF + '|' + nCtot + '|' + x;
 }
 
-function orgHoy_() { return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd'); }
+function orgHoy_() { return Utilities.formatDate(new Date(), WM_CONFIG.ZONA, 'yyyy-MM-dd'); }
 
 function orgDias_(fecha) {
   if (!fecha) return 0;
@@ -516,7 +514,7 @@ function orgUltimo_(visto, n) {
 
 function orgIndice_(ind, ss, otras, ocultas, sinUso, visto) {
   ind.clear();
-  var tz = Session.getScriptTimeZone();
+  var tz = WM_CONFIG.ZONA;
   var filas = [], banners = [];
   var hoja = function (n) { return ss.getSheetByName(n); };
   var link = function (n) { return '=HYPERLINK("#gid=' + hoja(n).getSheetId() + '","' + n.replace(/"/g, '""') + '")'; };

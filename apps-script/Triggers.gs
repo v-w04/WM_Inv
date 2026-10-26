@@ -3,8 +3,8 @@
  *  Triggers — Dos procesos programados
  * ============================================================
  *
- *   syncMain          cada 10 min · catálogo + WFS  (~90 seg)
- *   syncRegularChunk  cada  5 min · barrido inv. normal (~4 min por corrida)
+ *   syncMain          cada REFRESH_INTERVAL_MIN (15 min) · catálogo + WFS  (~15-90 seg)
+ *   syncRegularChunk  cada CHUNK_INTERVAL_MIN  (30 min) · barrido inv. propio (~3-4 min)
  */
 
 function instalarTriggers() {

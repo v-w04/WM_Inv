@@ -861,8 +861,8 @@ function leerCatalogoDelMaster_() {
 }
 
 /**
- * Lee la hoja Inv_Normal a un mapa por SKU.
- * Se usa para pegar el inventario propio al master.
+ * Lee el inventario propio ya guardado en Inventario (invNormal/invRevisado)
+ * a un mapa por SKU, para no perderlo cuando syncMain reescribe la hoja.
  */
 function leerStockPropio_() {
   const mapa = {};
