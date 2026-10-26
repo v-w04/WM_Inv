@@ -70,39 +70,41 @@ function orgHojas_() {
  * Debe coincidir 1 a 1 con onOpenMenu (Menu.gs).
  */
 var ORG_GUIA_MENU = [
-  ['🔄 Sincronizar', 'Catálogo + WFS  (~80 seg)', 'Baja el catalogo de Walmart y el stock de WFS y actualiza la hoja Inventario. Es lo mismo que hace solo el trigger.', 'Cuando quieras datos frescos ya', 'A VECES'],
-  ['🔄 Sincronizar', 'Inventario propio  (un lote)', 'Consulta el inventario propio de un lote de SKUs (los nuevos primero, luego los mas viejos).', 'Normalmente solo (cada 30 min)', 'A VECES'],
-  ['🔄 Sincronizar', 'Forzar catálogo completo ahora', 'Baja el catalogo completo de la API, no solo lo que ya esta en la hoja. Gasta mas llamadas.', 'Si sospechas que faltan o sobran SKUs', 'A VECES'],
+  ['📋 Publicación', '📋 Refrescar lista de no publicados', 'Rehace No_Publicados desde Inventario y escribe en Bloqueados el motivo que da Walmart. No gasta llamadas.', 'Cuando quieras ver que sigue sin publicar', 'DIARIO'],
+  ['📋 Publicación', '💰 ¿Dónde está el dinero parado?', 'Resumen de SKUs sin publicar por motivo y cuanto dinero hay parado. No gasta llamadas.', 'Para decidir que republicar primero', 'DIARIO'],
 
-  ['📊 Estado', 'Avance del barrido', 'Cuantos SKUs ya tienen inventario revisado y cuantos faltan.', 'Para ver como va el barrido', 'DIARIO'],
-  ['📊 Estado', 'Llamadas usadas hoy', 'Cuantas llamadas a la API van hoy y cuantas quedan.', 'Si el sync se saltea por presupuesto', 'A VECES'],
-  ['📊 Estado', 'Triggers activos', 'Lista los triggers instalados y cada cuanto corren.', 'Si dudas de que algo este corriendo', 'SOPORTE'],
-  ['📊 Estado', 'Seguridad del dashboard', 'Dice si el dashboard tiene contrasena puesta (solo lee, no muestra nada secreto).', 'Para confirmar que esta protegido', 'SOPORTE'],
+  ['📊 Estado', '📈 Avance del barrido', 'Cuantos SKUs ya tienen inventario revisado y cuantos faltan.', 'Para ver como va el barrido', 'DIARIO'],
+  ['📊 Estado', '📞 Llamadas usadas hoy', 'Cuantas llamadas a la API van hoy y cuantas quedan (contador de la cuenta que abre el menu).', 'Si el sync se saltea por presupuesto', 'A VECES'],
+  ['📊 Estado', '⏱ Triggers activos (mi cuenta)', 'Lista los triggers de TU cuenta de Google. Si el sync lo instalo otra cuenta, aqui sale vacio y es normal.', 'Si dudas de que algo este corriendo', 'SOPORTE'],
+  ['📊 Estado', '🔐 Seguridad del dashboard', 'Dice si el dashboard tiene contrasena puesta (solo lee, no muestra nada secreto).', 'Para confirmar que esta protegido', 'SOPORTE'],
 
-  ['📋 Publicación', 'Refrescar lista de no publicados', 'Rehace No_Publicados desde Inventario y escribe en Bloqueados el motivo que da Walmart. No gasta llamadas.', 'Cuando quieras ver que sigue sin publicar', 'DIARIO'],
-  ['📋 Publicación', '¿Dónde está el dinero parado?', 'Resumen de SKUs sin publicar por motivo y cuanto dinero hay parado. No gasta llamadas.', 'Para decidir que republicar primero', 'DIARIO'],
-
-  ['🔧 Diagnóstico', '⚠️ ¿Por qué no está corriendo?', 'Revisa triggers, cuota y presupuesto y dice cual es el culpable.', 'Si el Sync_Log dejo de avanzar', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'SKUs sin dato de inventario', 'Lista los SKUs a los que todavia no se les consulta el inventario propio.', 'Si el barrido no avanza', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Revisar columnas de las hojas', 'Comprueba que cada hoja traiga los encabezados que el sync necesita (los busca por nombre, no por lugar).', 'Despues de mover o renombrar columnas', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Probar conexión al Sheet', 'Prueba que el script abra este libro y vea sus hojas.', 'Si algo no escribe', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Probar login con Walmart', 'Prueba que las llaves de Walmart den un token.', 'Si la API falla', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Probar todos los endpoints', 'Prueba cada endpoint de Walmart que usa el dashboard.', 'Si algo de Walmart deja de contestar', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Probar paginación del catálogo', 'Prueba que el catalogo se baje completo, pagina por pagina.', 'Si faltan SKUs en Inventario', 'SOPORTE'],
-  ['🔧 Diagnóstico', '¿Hay reporte masivo?  (ahorro)', 'Busca si Walmart ofrece un reporte masivo para ahorrar llamadas.', 'Solo para investigar', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Reportes — ronda 2', 'Segunda prueba de reportes masivos de Walmart.', 'Solo para investigar', 'SOPORTE'],
-  ['🔧 Diagnóstico', 'Reportes — ¿qué trae adentro?', 'Muestra que columnas trae un reporte masivo de Walmart.', 'Solo para investigar', 'SOPORTE'],
-
-  ['⚙️ Configuración', 'Instalar / reinstalar triggers', 'Borra los triggers viejos y crea los del sync (catalogo + WFS y barrido de inventario).', 'Una vez, o si cambias la hora o dejaron de correr', 'SOPORTE'],
-  ['⚙️ Configuración', 'Quitar triggers', 'Apaga el sync automatico.', 'Solo si quieres pararlo', 'CUIDADO'],
-  ['⚙️ Configuración', 'Reintentar WFS avanzado', 'Vuelve a probar el endpoint avanzado de WFS (agrega columnas de analitica si Walmart ya lo habilito).', 'Si Walmart habilita WFS avanzado', 'SOPORTE'],
-  ['⚙️ Configuración', 'Reiniciar barrido desde cero', 'Deja todos los SKUs como pendientes de consultar inventario. Gasta llamadas.', 'Casi nunca', 'CUIDADO'],
-  ['⚙️ Configuración', 'Reiniciar contador de llamadas', 'Pone en cero el contador de llamadas del dia.', 'Solo si el contador quedo mal', 'CUIDADO'],
-  ['⚙️ Configuración', 'Quitar marca de cuota agotada', 'Quita la marca que dice que Google agoto la cuota del dia.', 'Cuando ya paso la cuota y el sync sigue saltando', 'SOPORTE'],
-  ['⚙️ Configuración', 'Limpiar contadores viejos (1 vez)', 'Migra contadores de una version anterior.', 'Una sola vez', 'SOPORTE'],
+  ['🔄 Sincronizar', '🔄 Catálogo + WFS  (~80 seg)', 'Baja el catalogo de Walmart y el stock de WFS y actualiza la hoja Inventario. Es lo mismo que hace solo el trigger.', 'Cuando quieras datos frescos ya', 'A VECES'],
+  ['🔄 Sincronizar', '📦 Inventario propio  (un lote)', 'Consulta el inventario propio de un lote de SKUs (los nuevos primero, luego los mas viejos).', 'Normalmente solo (cada 30 min)', 'A VECES'],
+  ['🔄 Sincronizar', '📚 Forzar catálogo completo ahora', 'Baja el catalogo completo de la API, no solo lo que ya esta en la hoja. Gasta mas llamadas.', 'Si sospechas que faltan o sobran SKUs', 'A VECES'],
 
   ['General', '🗂️ Ordenar hojas e índice', 'Pone colores, orden, encabezados, filtros y formato de precio/fecha, rehace el Indice y esta guia, BORRA respaldos y temporales, y manda al final (sin borrarlas) las hojas que parecen sin uso.', 'Cuando aparezca una hoja nueva o de vez en cuando', 'CUIDADO'],
-  ['General', '🔗 Abrir el dashboard', 'Abre la pagina del dashboard.', 'Cuando lo quieras ver', 'DIARIO']
+  ['General', '🔗 Abrir el dashboard', 'Abre la pagina del dashboard.', 'Cuando lo quieras ver', 'DIARIO'],
+
+  ['⏱ Corridas automáticas', '▶️ Instalar / reinstalar triggers', 'Borra los triggers viejos de TU cuenta y crea los del sync (catalogo + WFS y barrido de inventario). Si otra cuenta ya los tiene, avisa antes para no duplicar.', 'Una vez, o si cambias la hora o dejaron de correr', 'SOPORTE'],
+  ['⏱ Corridas automáticas', '🛑 Quitar triggers', 'Apaga el sync automatico de tu cuenta.', 'Solo si quieres pararlo', 'CUIDADO'],
+
+  ['🩺 Diagnóstico (si algo falla)', '🩺 ¿Por qué no está corriendo?', 'Revisa triggers, cuota y presupuesto y dice cual es el culpable.', 'Si el Sync_Log dejo de avanzar', 'SOPORTE'],
+  ['🩺 Diagnóstico (si algo falla)', '📭 SKUs sin dato de inventario', 'Lista los SKUs a los que todavia no se les consulta el inventario propio.', 'Si el barrido no avanza', 'SOPORTE'],
+  ['🩺 Diagnóstico (si algo falla)', '🧭 Revisar columnas de las hojas', 'Comprueba que cada hoja traiga los encabezados que el sync necesita (los busca por nombre, no por lugar).', 'Despues de mover o renombrar columnas', 'SOPORTE'],
+  ['🩺 Diagnóstico (si algo falla)', '🔌 Probar conexión al Sheet', 'Prueba que el script abra este libro y vea sus hojas.', 'Si algo no escribe', 'SOPORTE'],
+  ['🩺 Diagnóstico (si algo falla)', '🔑 Probar login con Walmart', 'Prueba que las llaves de Walmart den un token.', 'Si la API falla', 'SOPORTE'],
+
+  ['🩺 Diagnóstico › 🧰 Avanzado', '🧪 Probar todos los endpoints', 'Prueba cada endpoint de Walmart que usa el dashboard.', 'Si algo de Walmart deja de contestar', 'SOPORTE'],
+  ['🩺 Diagnóstico › 🧰 Avanzado', '📄 Probar paginación del catálogo', 'Prueba que el catalogo se baje completo, pagina por pagina.', 'Si faltan SKUs en Inventario', 'SOPORTE'],
+  ['🩺 Diagnóstico › 🧰 Avanzado', '🔎 ¿Hay reporte masivo?  (ahorro)', 'Busca si Walmart ofrece un reporte masivo para ahorrar llamadas.', 'Solo para investigar', 'SOPORTE'],
+  ['🩺 Diagnóstico › 🧰 Avanzado', '🔎 Reportes — ronda 2', 'Segunda prueba de reportes masivos de Walmart.', 'Solo para investigar', 'SOPORTE'],
+  ['🩺 Diagnóstico › 🧰 Avanzado', '🔎 Reportes — ¿qué trae adentro?', 'Muestra que columnas trae un reporte masivo de Walmart.', 'Solo para investigar', 'SOPORTE'],
+
+  ['🛠 Mantenimiento', '🧩 Reintentar WFS avanzado', 'Vuelve a probar el endpoint avanzado de WFS (agrega columnas de analitica si Walmart ya lo habilito).', 'Si Walmart habilita WFS avanzado', 'SOPORTE'],
+  ['🛠 Mantenimiento', '🔁 Reiniciar barrido desde cero', 'Deja todos los SKUs como pendientes de consultar inventario. Gasta llamadas.', 'Casi nunca', 'CUIDADO'],
+  ['🛠 Mantenimiento', '🧮 Reiniciar contador de llamadas', 'Pone en cero el contador de llamadas del dia.', 'Solo si el contador quedo mal', 'CUIDADO'],
+  ['🛠 Mantenimiento', '🧹 Quitar marca de cuota agotada', 'Quita la marca que dice que Google agoto la cuota del dia.', 'Cuando ya paso la cuota y el sync sigue saltando', 'SOPORTE'],
+  ['🛠 Mantenimiento', '🧹 Limpiar contadores viejos (1 vez)', 'Migra contadores de una version anterior.', 'Una sola vez', 'SOPORTE']
 ];
 
 /** Posiciones dentro de cada fila del registro y de la guia (listas en memoria, no columnas de una hoja). */

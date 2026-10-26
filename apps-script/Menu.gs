@@ -41,56 +41,60 @@ function onOpenMenu(e) {
   const ui = SpreadsheetApp.getUi();
 
   ui.createMenu('⚡ WM Inventario')
-    .addSubMenu(ui.createMenu('🔄 Sincronizar')
-      .addItem('Catálogo + WFS  (~80 seg)',        'mnu_syncMain')
-      .addItem('Inventario propio  (un lote)',      'mnu_chunk')
-      .addSeparator()
-      .addItem('Forzar catálogo completo ahora',    'mnu_forzarCatalogo'))
+    // ── Lo de todos los días ──────────────────────────────────────
+    .addSubMenu(ui.createMenu('📋 Publicación')
+      .addItem('📋 Refrescar lista de no publicados', 'mnu_refrescarNoPub')
+      .addItem('💰 ¿Dónde está el dinero parado?',    'mnu_resumenPub'))
 
     .addSubMenu(ui.createMenu('📊 Estado')
-      .addItem('Avance del barrido',                'mnu_progreso')
-      .addItem('Llamadas usadas hoy',               'mnu_consumo')
-      .addItem('Triggers activos',                  'mnu_triggers')
+      .addItem('📈 Avance del barrido',               'mnu_progreso')
+      .addItem('📞 Llamadas usadas hoy',              'mnu_consumo')
+      .addItem('⏱ Triggers activos (mi cuenta)',      'mnu_triggers')
       // Solo LEE: no muestra el hash ni permite cambiar nada.
-      .addItem('Seguridad del dashboard',           'mnu_estadoPassword'))
+      .addItem('🔐 Seguridad del dashboard',          'mnu_estadoPassword'))
 
-    .addSubMenu(ui.createMenu('📋 Publicación')
-      .addItem('Refrescar lista de no publicados',  'mnu_refrescarNoPub')
-      .addItem('¿Dónde está el dinero parado?',     'mnu_resumenPub'))
-
-    .addSubMenu(ui.createMenu('🔧 Diagnóstico')
-      .addItem('⚠️ ¿Por qué no está corriendo?',     'mnu_porQueNoCorre')
-      .addItem('SKUs sin dato de inventario',        'mnu_sinDato')
-      .addItem('Revisar columnas de las hojas',      'mnu_revisarColumnas')
+    .addSubMenu(ui.createMenu('🔄 Sincronizar')
+      .addItem('🔄 Catálogo + WFS  (~80 seg)',        'mnu_syncMain')
+      .addItem('📦 Inventario propio  (un lote)',     'mnu_chunk')
       .addSeparator()
-      .addItem('Probar conexión al Sheet',          'mnu_testSheet')
-      .addItem('Probar login con Walmart',          'mnu_testAuth')
-      .addItem('Probar todos los endpoints',        'mnu_diagEndpoints')
-      .addItem('Probar paginación del catálogo',    'mnu_diagPaginacion')
-      .addItem('¿Hay reporte masivo?  (ahorro)',    'mnu_diagReportes')
-      .addItem('Reportes — ronda 2',                'mnu_diagReportes2')
-      .addItem('Reportes — ¿qué trae adentro?',     'mnu_diagReportes3'))
+      .addItem('📚 Forzar catálogo completo ahora',   'mnu_forzarCatalogo'))
 
     .addSeparator()
+    .addItem('🗂️ Ordenar hojas e índice',             'mnu_ordenarLibro')
+    .addItem('🔗 Abrir el dashboard',                 'mnu_abrirDashboard')
+    .addSeparator()
 
+    // ── Lo que se usa poco ────────────────────────────────────────
     // ⚠️ NO poner aquí nada que toque credenciales ni la contraseña del
     // dashboard. Este menú lo ve cualquiera con permiso de edición en la
     // hoja, que es un permiso mucho más repartido que el de administrar
     // accesos. Esas funciones viven en Auth.gs y solo se corren desde el
     // editor de Apps Script, que exige permiso sobre el script.
-    .addSubMenu(ui.createMenu('⚙️ Configuración')
-      .addItem('Instalar / reinstalar triggers',    'mnu_instalarTriggers')
-      .addItem('Quitar triggers',                   'mnu_quitarTriggers')
-      .addSeparator()
-      .addItem('Reintentar WFS avanzado',           'mnu_resetWfs')
-      .addItem('Reiniciar barrido desde cero',      'mnu_reiniciarBarrido')
-      .addItem('Reiniciar contador de llamadas',    'mnu_reiniciarContador')
-      .addItem('Quitar marca de cuota agotada',     'mnu_limpiarCuota')
-      .addItem('Limpiar contadores viejos (1 vez)', 'mnu_migrarContadores'))
+    .addSubMenu(ui.createMenu('⏱ Corridas automáticas')
+      .addItem('▶️ Instalar / reinstalar triggers',   'mnu_instalarTriggers')
+      .addItem('🛑 Quitar triggers',                  'mnu_quitarTriggers'))
 
-    .addSeparator()
-    .addItem('🗂️ Ordenar hojas e índice',            'mnu_ordenarLibro')
-    .addItem('🔗 Abrir el dashboard',               'mnu_abrirDashboard')
+    .addSubMenu(ui.createMenu('🩺 Diagnóstico (si algo falla)')
+      .addItem('🩺 ¿Por qué no está corriendo?',      'mnu_porQueNoCorre')
+      .addItem('📭 SKUs sin dato de inventario',      'mnu_sinDato')
+      .addItem('🧭 Revisar columnas de las hojas',    'mnu_revisarColumnas')
+      .addSeparator()
+      .addItem('🔌 Probar conexión al Sheet',         'mnu_testSheet')
+      .addItem('🔑 Probar login con Walmart',         'mnu_testAuth')
+      .addSeparator()
+      .addSubMenu(ui.createMenu('🧰 Avanzado')
+        .addItem('🧪 Probar todos los endpoints',     'mnu_diagEndpoints')
+        .addItem('📄 Probar paginación del catálogo', 'mnu_diagPaginacion')
+        .addItem('🔎 ¿Hay reporte masivo?  (ahorro)', 'mnu_diagReportes')
+        .addItem('🔎 Reportes — ronda 2',             'mnu_diagReportes2')
+        .addItem('🔎 Reportes — ¿qué trae adentro?',  'mnu_diagReportes3')))
+
+    .addSubMenu(ui.createMenu('🛠 Mantenimiento')
+      .addItem('🧩 Reintentar WFS avanzado',          'mnu_resetWfs')
+      .addItem('🔁 Reiniciar barrido desde cero',     'mnu_reiniciarBarrido')
+      .addItem('🧮 Reiniciar contador de llamadas',   'mnu_reiniciarContador')
+      .addItem('🧹 Quitar marca de cuota agotada',    'mnu_limpiarCuota')
+      .addItem('🧹 Limpiar contadores viejos (1 vez)','mnu_migrarContadores'))
 
     .addToUi();
 }
@@ -216,17 +220,27 @@ function mnu_consumo() {
 
 function mnu_triggers() {
   const ts = ScriptApp.getProjectTriggers();
-  if (!ts.length) { dialogo_('Triggers', 'No hay ninguno instalado.'); return; }
+  const lastMain = Number(PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+  const mins = lastMain ? Math.round((Date.now() - lastMain) / 60000) : null;
+  if (!ts.length) {
+    dialogo_('⏱ Triggers activos (mi cuenta)',
+      'Esta cuenta de Google no tiene triggers.\n\n' +
+      (mins !== null && mins <= WM_CONFIG.REFRESH_INTERVAL_MIN * 3
+        ? '✅ Aun así el sync corrió hace ' + mins + ' min: los triggers están instalados en OTRA cuenta (los triggers son por cuenta). Es normal.\n\nNO los instales aquí: todo correría doble.'
+        : '❌ Y el sync no ha corrido recién' + (mins !== null ? ' (hace ' + mins + ' min)' : '') + '.\nUsa: Corridas automáticas → Instalar / reinstalar triggers.'));
+    return;
+  }
 
   const lineas = ts.map(function(t){
     return '  · ' + t.getHandlerFunction();
   }).join('\n');
 
-  dialogo_('⏱ Triggers activos',
+  dialogo_('⏱ Triggers activos (mi cuenta)',
     lineas + '\n\n' +
     'Intervalos configurados:\n' +
     '  syncMain          cada ' + WM_CONFIG.REFRESH_INTERVAL_MIN + ' min\n' +
-    '  syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min');
+    '  syncRegularChunk  cada ' + WM_CONFIG.CHUNK_INTERVAL_MIN + ' min\n\n' +
+    'Ojo: solo salen los de esta cuenta de Google.');
 }
 
 /* ============================================================
@@ -403,6 +417,18 @@ function mostrarTexto_(titulo, texto) {
 
 function mnu_instalarTriggers() {
   try {
+    // Los triggers son por cuenta: si esta cuenta no tiene y el sync ya corre
+    // (otra cuenta lo instaló), instalar aquí lo haría correr DOBLE.
+    const lastMain = Number(PropertiesService.getScriptProperties().getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+    const mins = lastMain ? Math.round((Date.now() - lastMain) / 60000) : null;
+    if (!ScriptApp.getProjectTriggers().length && mins !== null && mins <= WM_CONFIG.REFRESH_INTERVAL_MIN * 3) {
+      const ui = SpreadsheetApp.getUi();
+      const r = ui.alert('⚠️ El sync ya está corriendo',
+        'El sync corrió hace ' + mins + ' min, pero esta cuenta no tiene triggers: los instaló OTRA cuenta.\n\n' +
+        'Si instalas aquí, todo correrá DOBLE y gastará el doble de llamadas.\n\n¿Instalar de todos modos?',
+        ui.ButtonSet.YES_NO);
+      if (r !== ui.Button.YES) return;
+    }
     instalarTriggers();
 
     // Corridas por día

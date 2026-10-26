@@ -272,12 +272,20 @@ function porQueNoCorre() {
   p('── 1. Triggers instalados ──');
   const ts = ScriptApp.getProjectTriggers();
   const nombres = ts.map(function(t){ return t.getHandlerFunction(); });
-  p('   ' + (nombres.length ? nombres.join(', ') : 'NINGUNO'));
-  if (nombres.indexOf('syncMain') < 0) {
-    p('   ❌ Falta syncMain. Corre instalarTriggers().');
-    culpable = culpable || 'sin triggers';
-  } else {
+  p('   (solo se ven los de ESTA cuenta de Google: los triggers son por cuenta)');
+  p('   ' + (nombres.length ? nombres.join(', ') : 'NINGUNO en esta cuenta'));
+  const lastMain0 = Number(props.getProperty(WM_CONFIG.PROP_LAST_MAIN) || 0);
+  const minsMain0 = lastMain0 ? Math.round((Date.now() - lastMain0) / 60000) : null;
+  const sincCorre = minsMain0 !== null && minsMain0 <= WM_CONFIG.REFRESH_INTERVAL_MIN * 3;
+  if (nombres.indexOf('syncMain') >= 0) {
     p('   ✅ syncMain está instalado');
+  } else if (sincCorre) {
+    p('   ✅ Esta cuenta no tiene triggers, pero syncMain corrió hace ' + minsMain0 + ' min:');
+    p('      los triggers están en OTRA cuenta. Es normal.');
+    p('      NO los instales aquí: todo correría doble.');
+  } else {
+    p('   ❌ Falta syncMain y no ha corrido recién. Usa: Corridas automáticas → Instalar.');
+    culpable = culpable || 'sin triggers';
   }
   p('');
 
@@ -331,6 +339,7 @@ function porQueNoCorre() {
   p('── 3. Presupuesto de llamadas (nuestro contador) ──');
   const restan = fetchRestantes_();
   const usadas = WM_CONFIG.DAILY_FETCH_BUDGET - restan;
+  p('   (contador de ESTA cuenta: si el sync corre desde otra, aquí marca 0)');
   p('   Usadas hoy:  ' + usadas + ' de ' + WM_CONFIG.DAILY_FETCH_BUDGET);
   p('   Restantes:   ' + restan);
   if (restan < 120) {
@@ -414,12 +423,12 @@ function porQueNoCorre() {
       p(' últimos datos que alcanzó a guardar.');
     } else if (culpable.indexOf('presupuesto propio') >= 0) {
       p(' QUÉ HACER: si la cuota de Google ya se reinició,');
-      p(' usa el menú → Configuración → Reiniciar contador.');
+      p(' usa el menú → Mantenimiento → Reiniciar contador.');
     } else if (culpable.indexOf('nunca completó') >= 0 || culpable.indexOf('sin correr') >= 0) {
       p(' QUÉ HACER: corre syncMain a mano desde el menú.');
       p(' Con que termine bien una vez, se destraba el barrido.');
     } else if (culpable.indexOf('sin triggers') >= 0) {
-      p(' QUÉ HACER: menú → Configuración → Instalar triggers.');
+      p(' QUÉ HACER: menú → Corridas automáticas → Instalar triggers.');
     }
   }
   p('══════════════════════════════════════════════════');
